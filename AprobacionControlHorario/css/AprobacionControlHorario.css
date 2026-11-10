@@ -1,0 +1,241 @@
+.ach-container {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-height: 700px;
+    background-color: #faf9f8;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    position: relative;
+    border: 1px solid #edebe9;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Panel Izquierdo */
+.ach-sidebar {
+    width: 250px;
+    background-color: #ffffff;
+    border-right: 1px solid #edebe9;
+    display: flex;
+    flex-direction: column;
+    padding: 15px;
+    box-shadow: 2px 0 5px rgba(0,0,0,0.02);
+    z-index: 2;
+}
+
+.ach-sidebar-title {
+    font-weight: 600;
+    color: #323130;
+    margin-bottom: 15px;
+    border-bottom: 2px solid #0078d4;
+    padding-bottom: 5px;
+}
+
+.ach-resource-list {
+    flex-grow: 1;
+    overflow-y: auto;
+}
+
+.ach-resource-item {
+    padding: 10px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-bottom: 4px;
+    color: #444;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+}
+
+.ach-resource-item:hover {
+    background-color: #f3f2f1;
+}
+
+.ach-resource-item.active {
+    background-color: #e1dfdd;
+    color: #0078d4;
+    font-weight: 600;
+    border-left: 3px solid #0078d4;
+}
+
+.ach-res-icon {
+    font-size: 16px;
+}
+
+/* Panel Derecho Principal */
+.ach-main {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #faf9f8;
+    overflow: hidden;
+}
+
+.ach-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 25px;
+    background-color: #ffffff;
+    border-bottom: 1px solid #edebe9;
+}
+
+.ach-week-selector {
+    background: #f3f2f1;
+    border-radius: 20px;
+    padding: 2px 10px;
+}
+
+/* Rejilla 7 días */
+.ach-grid-container {
+    flex-grow: 1;
+    position: relative;
+    padding: 15px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.ach-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 10px;
+    height: 1000px; /* Altura forzada para que la línea de tiempo de 24h respire */
+    min-height: 100%;
+}
+
+.ach-col {
+    background-color: #ffffff;
+    border: 1px solid #edebe9;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.ach-col-header {
+    text-align: center;
+    padding: 10px;
+    background-color: #f8f8f8;
+    border-bottom: 1px solid #edebe9;
+    font-weight: 600;
+    font-size: 13px;
+    color: #323130;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+
+/* Estados Vacíos */
+.ach-empty-state {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #a19f9d;
+    padding: 20px;
+    text-align: center;
+}
+
+.ach-empty-icon {
+    font-size: 32px;
+    margin-bottom: 10px;
+    opacity: 0.5;
+}
+
+/* Timeline Vertical (Solo lectura) */
+.ach-timeline {
+    position: relative;
+    flex-grow: 1;
+    margin: 10px 10px 10px 40px; /* Margen para el eje Y */
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent calc(4.166% - 1px),
+      #f3f2f1 calc(4.166% - 1px),
+      #f3f2f1 4.166%
+    ); /* Líneas sutiles cada hora */
+}
+
+.ach-axis {
+    position: absolute;
+    left: -40px;
+    top: 0;
+    bottom: 0;
+    width: 40px;
+}
+
+.ach-tick {
+    position: absolute;
+    transform: translateY(-50%);
+    width: 100%;
+    text-align: right;
+    padding-right: 8px;
+    font-size: 10px;
+    color: #888;
+    font-weight: 500;
+}
+
+.ach-entry {
+    position: absolute;
+    left: 0;
+    right: 0;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.1);
+    overflow: hidden;
+    color: white;
+    font-size: 11px;
+    pointer-events: none; /* ESTRICTAMENTE SOLO LECTURA */
+}
+
+.ach-entry-inner {
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    height: 100%;
+}
+
+.ach-entry-icon { font-size: 12px; margin-bottom: 2px; }
+.ach-entry-time { font-weight: bold; margin-bottom: 2px; }
+.ach-entry-desc {
+    opacity: 0.9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+    font-size: 10px;
+}
+
+/* Carga y Errores */
+.ach-loading-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(2px);
+    z-index: 10;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.ach-error {
+    background-color: #fde7e9;
+    color: #a80000;
+    padding: 10px 15px;
+    font-size: 13px;
+    border-bottom: 1px solid #f9d8db;
+}
+
+/* Versión Abajo Derecha */
+.ach-version-tag {
+    position: absolute;
+    bottom: 5px;
+    right: 10px;
+    font-size: 10px;
+    color: #a19f9d;
+    z-index: 50;
+    pointer-events: none;
+}
