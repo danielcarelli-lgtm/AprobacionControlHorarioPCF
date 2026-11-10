@@ -22,7 +22,55 @@ interface ITimeEntry {
     hasOt: boolean;
 }
 
-const VERSION = "v1.0.2";
+interface IDailyReport {
+    statusReason: string;
+    startHour: number | null;
+    endHour: number | null;
+}
+
+const VERSION = "v1.0.5";
+
+const getLocalDateKey = (date: Date): string =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+const getStatusClassName = (status: string): string => {
+    const normalizedStatus = status.toLocaleLowerCase("es-ES");
+    if (normalizedStatus.includes("rechaz") || normalizedStatus.includes("reject")) {
+        return "ach-day-status--rejected";
+    }
+    if (normalizedStatus.includes("pendient") || normalizedStatus.includes("pending")) {
+        return "ach-day-status--pending";
+    }
+    if (normalizedStatus.includes("enviad") || normalizedStatus.includes("sent")) {
+        return "ach-day-status--sent";
+    }
+    return "ach-day-status--default";
+};
+
+const getTimeOfDay = (value: unknown): number | null => {
+    if (typeof value !== "string") return null;
+
+    const match = /(?:T|^)(\d{1,2}):(\d{2})/.exec(value);
+    if (!match) return null;
+
+    return Number(match[1]) + Number(match[2]) / 60;
+};
+
+const formatTimeOfDay = (time: number): string => {
+    const hours = Math.floor(time);
+    const minutes = Math.round((time - hours) * 60);
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+};
+
+const renderTimeAxis = (side: "left" | "right") => (
+    <div className={`ach-axis ach-axis--${side}`} aria-hidden="true">
+        {[0, 4, 8, 12, 16, 20, 24].map(hour => (
+            <div key={hour} className="ach-tick" style={{ top: `${(hour / 24) * 100}%` }}>
+                {String(hour).padStart(2, "0")}:00
+            </div>
+        ))}
+    </div>
+);
 
 const getErrorMessage = (error: unknown): string =>
     error instanceof Error ? error.message : String(error);
@@ -31,7 +79,9 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     const [resources, setResources] = useState<IResource[]>([]);
     const [selectedResource, setSelectedResource] = useState<IResource | null>(null);
     const [currentWeekStart, setCurrentWeekStart] = useState<Date>(getMonday(new Date()));
+    const [timelineHeight, setTimelineHeight] = useState<number>(1000);
     const [timeEntries, setTimeEntries] = useState<Record<string, ITimeEntry[]>>({});
+    const [dailyReports, setDailyReports] = useState<Record<string, IDailyReport>>({});
     const [isLoadingResources, setIsLoadingResources] = useState<boolean>(true);
     const [isLoadingEntries, setIsLoadingEntries] = useState<boolean>(false);
     const [errorMsg, setErrorMsg] = useState<string>("");
@@ -50,6 +100,10 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         const newMonday = new Date(currentWeekStart);
         newMonday.setDate(newMonday.getDate() + (offset * 7));
         setCurrentWeekStart(newMonday);
+    };
+
+    const changeTimelineZoom = (offset: number) => {
+        setTimelineHeight(height => Math.min(1600, Math.max(600, height + offset)));
     };
 
     // 1. Cargar Recursos al iniciar
@@ -110,18 +164,38 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                 const filter = `_msdyn_bookableresource_value eq ${selectedResource.id} and msdyn_start ge ${currentWeekStart.toISOString()} and msdyn_start le ${sunday.toISOString()}`;
                 const select = `msdyn_timeentryid,msdyn_start,msdyn_end,msdyn_type,msdyn_description,_msdyn_workorder_value`;
                 
-                const results = await context.webAPI.retrieveMultipleRecords("msdyn_timeentry", `?$filter=${filter}&$select=${select}`);
+                const [results, reportResults] = await Promise.all([
+                    context.webAPI.retrieveMultipleRecords("msdyn_timeentry", `?$filter=${filter}&$select=${select}`),
+                    context.webAPI.retrieveMultipleRecords(
+                        "sec_partediario",
+                        `?$select=sec_partediarioid,sec_fecha,statuscode,sec_horainicio,sec_horafin&$filter=statecode eq 0 and _sec_recursoid_value eq ${selectedResource.id} and sec_fecha ge ${currentWeekStart.toISOString()} and sec_fecha le ${sunday.toISOString()}`
+                    )
+                ]);
                 
                 // Agrupar por fecha (YYYY-MM-DD)
                 const grouped: Record<string, ITimeEntry[]> = {};
+                const reportsByDate: Record<string, IDailyReport> = {};
                 
                 // Inicializar los 7 días vacíos
                 for (let i = 0; i < 7; i++) {
                     const d = new Date(currentWeekStart);
                     d.setDate(d.getDate() + i);
-                    const dateKey = d.toISOString().split('T')[0];
+                    const dateKey = getLocalDateKey(d);
                     grouped[dateKey] = [];
                 }
+
+                reportResults.entities.forEach(report => {
+                    const date: unknown = report.sec_fecha;
+                    if (typeof date !== "string") return;
+
+                    const dateKey = date.split("T")[0];
+                    const statusReason: unknown = report["statuscode@OData.Community.Display.V1.FormattedValue"];
+                    reportsByDate[dateKey] = {
+                        statusReason: typeof statusReason === "string" ? statusReason : "",
+                        startHour: getTimeOfDay(report.sec_horainicio),
+                        endHour: getTimeOfDay(report.sec_horafin)
+                    };
+                });
 
                 results.entities.forEach(e => {
                     const id: unknown = e.msdyn_timeentryid;
@@ -131,7 +205,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
 
                     const start = new Date(e.msdyn_start);
                     const end = new Date(e.msdyn_end);
-                    const dateKey = start.toISOString().split('T')[0];
+                    const dateKey = getLocalDateKey(start);
                     const formattedType: unknown = e["msdyn_type@OData.Community.Display.V1.FormattedValue"];
                     const description: unknown = e.msdyn_description;
                     
@@ -150,6 +224,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                 });
 
                 setTimeEntries(grouped);
+                setDailyReports(reportsByDate);
             } catch (err: unknown) {
                 setErrorMsg("Error cargando el parte horario: " + getErrorMessage(err));
             } finally {
@@ -187,27 +262,36 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     // Renderizado del calendario diario
     const renderDayColumn = (dateKey: string, dateObj: Date) => {
         const dayEntries = timeEntries[dateKey] || [];
+        const dailyReport = dailyReports[dateKey];
         const dayName = dateObj.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric' });
+        const statusClassName = getStatusClassName(dailyReport?.statusReason || "");
         
         return (
             <div className="ach-col" key={dateKey}>
-                <div className="ach-col-header">{dayName.charAt(0).toUpperCase() + dayName.slice(1)}</div>
+                <div className="ach-col-sticky-header">
+                    <div className="ach-col-header">{dayName.charAt(0).toUpperCase() + dayName.slice(1)}</div>
+                    <div className={`ach-day-status ${statusClassName}`} title={dailyReport?.statusReason || undefined}>
+                        {dailyReport ? dailyReport.statusReason || "Estado no disponible" : "Sin parte generado"}
+                    </div>
+                </div>
                 
-                {dayEntries.length === 0 ? (
+                {!dailyReport ? (
                     <div className="ach-empty-state">
                         <Icon iconName="Calendar" className="ach-empty-icon" />
                         <Text>Sin parte generado</Text>
                     </div>
                 ) : (
                     <div className="ach-timeline">
-                        {/* Eje de 24 horas (ticks cada 4h para no sobrecargar) */}
-                        <div className="ach-axis">
-                            {[0, 4, 8, 12, 16, 20, 24].map(h => (
-                                <div key={h} className="ach-tick" style={{ top: `${(h / 24) * 100}%` }}>
-                                    {String(h).padStart(2, '0')}:00
-                                </div>
-                            ))}
-                        </div>
+                        {dailyReport.startHour !== null && (
+                            <div className="ach-work-marker" style={{ top: `${(dailyReport.startHour / 24) * 100}%` }}>
+                                <span>Inicio {formatTimeOfDay(dailyReport.startHour)}</span>
+                            </div>
+                        )}
+                        {dailyReport.endHour !== null && (
+                            <div className="ach-work-marker ach-work-marker-end" style={{ top: `${(dailyReport.endHour / 24) * 100}%` }}>
+                                <span>Fin {formatTimeOfDay(dailyReport.endHour)}</span>
+                            </div>
+                        )}
                         
                         {/* Bloques de entradas */}
                         {dayEntries.map(e => {
@@ -282,6 +366,23 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                             {getWeekRangeLabel()}
                         </Text>
                         <IconButton iconProps={{ iconName: 'ChevronRight' }} title="Semana siguiente" onClick={() => changeWeek(1)} />
+                        <span className="ach-zoom-controls" aria-label="Zoom de la línea de tiempo">
+                            <IconButton
+                                iconProps={{ iconName: 'ZoomOut' }}
+                                title="Reducir zoom"
+                                ariaLabel="Reducir zoom"
+                                disabled={timelineHeight <= 600}
+                                onClick={() => changeTimelineZoom(-100)}
+                            />
+                            <Text className="ach-zoom-level">{Math.round(timelineHeight / 10)}%</Text>
+                            <IconButton
+                                iconProps={{ iconName: 'ZoomIn' }}
+                                title="Aumentar zoom"
+                                ariaLabel="Aumentar zoom"
+                                disabled={timelineHeight >= 1600}
+                                onClick={() => changeTimelineZoom(100)}
+                            />
+                        </span>
                     </Stack>
                 </div>
 
@@ -290,12 +391,14 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                         <div className="ach-loading-overlay"><Spinner size={SpinnerSize.large} label="Cargando partes..." /></div>
                     ) : null}
                     
-                    <div className="ach-grid">
+                    <div className="ach-grid" style={{ height: `${timelineHeight}px` }}>
+                        {renderTimeAxis("left")}
                         {Array.from({ length: 7 }).map((_, i) => {
                             const d = new Date(currentWeekStart);
                             d.setDate(d.getDate() + i);
-                            return renderDayColumn(d.toISOString().split('T')[0], d);
+                            return renderDayColumn(getLocalDateKey(d), d);
                         })}
+                        {renderTimeAxis("right")}
                     </div>
                 </div>
             </div>

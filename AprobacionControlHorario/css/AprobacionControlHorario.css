@@ -88,6 +88,20 @@
     padding: 2px 10px;
 }
 
+.ach-zoom-controls {
+    display: flex;
+    align-items: center;
+    border-left: 1px solid #d2d0ce;
+    margin-left: 4px;
+    padding-left: 4px;
+}
+
+.ach-zoom-level {
+    min-width: 38px;
+    text-align: center;
+    font-size: 12px;
+}
+
 /* Rejilla 7 días */
 .ach-grid-container {
     flex-grow: 1;
@@ -99,10 +113,9 @@
 
 .ach-grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: 40px repeat(7, minmax(0, 1fr)) 40px;
     gap: 10px;
     height: 1000px; /* Altura forzada para que la línea de tiempo de 24h respire */
-    min-height: 100%;
 }
 
 .ach-col {
@@ -114,7 +127,17 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
+.ach-col-sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+
 .ach-col-header {
+    box-sizing: border-box;
+    height: 36px;
     text-align: center;
     padding: 10px;
     background-color: #f8f8f8;
@@ -124,6 +147,46 @@
     color: #323130;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ach-day-status {
+    box-sizing: border-box;
+    height: 26px;
+    line-height: 13px;
+    padding: 6px 4px;
+    border-bottom: 1px solid #d8d6d4;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ach-day-status--sent {
+    background-color: #e8f1fb;
+    border-bottom-color: #c9def3;
+    color: #285b8f;
+}
+
+.ach-day-status--rejected {
+    background-color: #fdebec;
+    border-bottom-color: #f5c9cc;
+    color: #a33b44;
+}
+
+.ach-day-status--pending {
+    background-color: #fff4ce;
+    border-bottom-color: #f1df9b;
+    color: #805b00;
+}
+
+.ach-day-status--default {
+    background-color: #f3f2f1;
+    color: #605e5c;
 }
 
 /* Estados Vacíos */
@@ -148,7 +211,7 @@
 .ach-timeline {
     position: relative;
     flex-grow: 1;
-    margin: 10px 10px 10px 40px; /* Margen para el eje Y */
+    margin: 10px 8px;
     background: repeating-linear-gradient(
       0deg,
       transparent,
@@ -159,11 +222,17 @@
 }
 
 .ach-axis {
-    position: absolute;
-    left: -40px;
-    top: 0;
-    bottom: 0;
-    width: 40px;
+    position: relative;
+    grid-row: 1;
+    margin: 72px 0 10px;
+}
+
+.ach-axis--left {
+    grid-column: 1;
+}
+
+.ach-axis--right {
+    grid-column: 9;
 }
 
 .ach-tick {
@@ -177,6 +246,40 @@
     font-weight: 500;
 }
 
+.ach-axis--right .ach-tick {
+    text-align: left;
+    padding-right: 0;
+    padding-left: 8px;
+}
+
+.ach-work-marker {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 4;
+    border-top: 1px dashed #107c10;
+    pointer-events: none;
+}
+
+.ach-work-marker span {
+    position: absolute;
+    right: 0;
+    bottom: 1px;
+    padding: 1px 3px;
+    background-color: #ffffff;
+    color: #107c10;
+    font-size: 9px;
+    font-weight: 600;
+}
+
+.ach-work-marker-end {
+    border-top-color: #c4314b;
+}
+
+.ach-work-marker-end span {
+    color: #c4314b;
+}
+
 .ach-entry {
     position: absolute;
     left: 0;
@@ -184,6 +287,7 @@
     border-radius: 4px;
     box-shadow: 0 1px 4px rgba(0,0,0,0.2);
     border: 1px solid rgba(255,255,255,0.1);
+    z-index: 2;
     overflow: hidden;
     color: white;
     font-size: 11px;
