@@ -33,6 +33,47 @@
     padding-bottom: 5px;
 }
 
+.ach-resource-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    margin-bottom: 10px;
+    padding: 0 9px;
+    border: 1px solid #c8c6c4;
+    border-radius: 4px;
+    background-color: #ffffff;
+}
+
+.ach-resource-search:focus-within {
+    border-color: #0078d4;
+    box-shadow: 0 0 0 1px #0078d4;
+}
+
+.ach-resource-search-icon {
+    color: #605e5c;
+    font-size: 13px;
+}
+
+.ach-resource-search-input {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 0;
+    border: 0;
+    outline: 0;
+    color: #323130;
+    background: transparent;
+    font: 13px 'Segoe UI', system-ui, sans-serif;
+}
+
+.ach-resource-search-input::placeholder {
+    color: #797775;
+}
+
+.ach-resource-search-input::-webkit-search-cancel-button {
+    cursor: pointer;
+}
+
 .ach-resource-list {
     flex-grow: 1;
     overflow-y: auto;
@@ -86,23 +127,48 @@
 }
 
 .ach-week-selector {
-    background: #f3f2f1;
-    border-radius: 20px;
-    padding: 2px 10px;
+    background: #ffffff;
+    border: 1px solid #e1dfdd;
+    border-radius: 16px;
+    padding: 2px 5px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+.ach-week-button {
+    width: 26px;
+    height: 26px;
+    border-radius: 13px;
+}
+
+.ach-week-button .ms-Icon {
+    font-size: 11px;
+}
+
+.ach-week-label {
+    width: 148px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
 }
 
 .ach-zoom-controls {
     display: flex;
     align-items: center;
-    border-left: 1px solid #d2d0ce;
-    margin-left: 4px;
-    padding-left: 4px;
+    border-left: 1px solid #e1dfdd;
+    margin-left: 2px;
+    padding-left: 2px;
+}
+
+.ach-zoom-controls .ms-Button {
+    width: 24px;
+    height: 24px;
 }
 
 .ach-zoom-level {
-    min-width: 38px;
+    min-width: 30px;
     text-align: center;
-    font-size: 12px;
+    font-size: 11px;
 }
 
 /* Rejilla 7 días */
@@ -119,7 +185,7 @@
     display: grid;
     grid-template-columns: 40px repeat(7, minmax(0, 1fr)) 40px;
     gap: 10px;
-    height: 1000px; /* Altura forzada para que la línea de tiempo de 24h respire */
+    min-height: 0;
 }
 
 .ach-col {
@@ -171,9 +237,9 @@
 }
 
 .ach-day-status--sent {
-    background-color: #e8f1fb;
-    border-bottom-color: #c9def3;
-    color: #285b8f;
+    background-color: #e8f5e9;
+    border-bottom-color: #c8e6c9;
+    color: #2e7d32;
 }
 
 .ach-day-status--rejected {
@@ -183,20 +249,62 @@
 }
 
 .ach-day-status--pending {
-    background-color: #fff4ce;
-    border-bottom-color: #f1df9b;
-    color: #805b00;
+    background-color: #e8f1fb;
+    border-bottom-color: #c9def3;
+    color: #285b8f;
 }
 
 .ach-day-status--approved {
-    background-color: #e7f4e4;
-    border-bottom-color: #c5e0bd;
-    color: #237a35;
+    background-color: #c8e6c9;
+    border-bottom-color: #a5d6a7;
+    color: #1b5e20;
 }
 
 .ach-day-status--default {
     background-color: #f3f2f1;
     color: #605e5c;
+}
+
+.ach-day-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 5px 8px;
+    border-bottom: 1px solid #edebe9;
+}
+
+.ach-day-action {
+    min-height: 23px;
+    padding: 2px 6px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background-color: #ffffff;
+    font: 600 11px 'Segoe UI', system-ui, sans-serif;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.ach-day-action:disabled {
+    cursor: default;
+    opacity: 0.55;
+}
+
+.ach-day-action--reject {
+    color: #a4262c;
+    border-color: #e6b9bc;
+}
+
+.ach-day-action--reject:not(:disabled):hover {
+    background-color: #fdebec;
+}
+
+.ach-day-action--approve {
+    color: #107c10;
+    border-color: #b7d7b7;
+}
+
+.ach-day-action--approve:not(:disabled):hover {
+    background-color: #e8f5e9;
 }
 
 /* Estados Vacíos */
@@ -300,27 +408,27 @@
     z-index: 2;
     overflow: hidden;
     color: white;
-    font-size: 11px;
+    font-size: 10px;
     pointer-events: none; /* ESTRICTAMENTE SOLO LECTURA */
 }
 
 .ach-entry-inner {
-    padding: 4px;
+    padding: 3px;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     height: 100%;
 }
 
-.ach-entry-icon { font-size: 12px; margin-bottom: 2px; }
-.ach-entry-time { font-weight: bold; margin-bottom: 2px; }
+.ach-entry-icon { font-size: 11px; margin-bottom: 1px; }
+.ach-entry-time { font-size: 9px; font-weight: bold; margin-bottom: 1px; }
 .ach-entry-desc {
     opacity: 0.9;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     width: 100%;
-    font-size: 10px;
+    font-size: 9px;
 }
 
 /* Carga y Errores */
