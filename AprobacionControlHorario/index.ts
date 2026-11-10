@@ -7,6 +7,7 @@ export class AprobacionControlHorario implements ComponentFramework.ReactControl
     private _context: ComponentFramework.Context<IInputs>;
 
     public init(context: ComponentFramework.Context<IInputs>, notifyOutputChanged: () => void): void {
+        context.mode.trackContainerResize(true);
         this._notifyOutputChanged = notifyOutputChanged;
         this._context = context;
     }
@@ -19,7 +20,9 @@ export class AprobacionControlHorario implements ComponentFramework.ReactControl
 
         const props: IAppProps = {
             context: this._context,
-            region: region
+            region: region,
+            width: context.mode.allocatedWidth,
+            height: context.mode.allocatedHeight
         };
 
         return React.createElement(AprobacionControlHorarioApp, props);

@@ -6,6 +6,8 @@ import { Spinner, SpinnerSize, Icon, Stack, Text, IconButton } from '@fluentui/r
 export interface IAppProps {
     context: ComponentFramework.Context<IInputs>;
     region: string;
+    width: number;
+    height: number;
 }
 
 interface IResource {
@@ -41,6 +43,9 @@ const getStatusClassName = (status: string): string => {
     if (normalizedStatus.includes("pendient") || normalizedStatus.includes("pending")) {
         return "ach-day-status--pending";
     }
+    if (normalizedStatus.includes("aprob") || normalizedStatus.includes("approv") || normalizedStatus.includes("valid")) {
+        return "ach-day-status--approved";
+    }
     if (normalizedStatus.includes("enviad") || normalizedStatus.includes("sent")) {
         return "ach-day-status--sent";
     }
@@ -75,7 +80,7 @@ const renderTimeAxis = (side: "left" | "right") => (
 const getErrorMessage = (error: unknown): string =>
     error instanceof Error ? error.message : String(error);
 
-export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, region }) => {
+export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, region, width, height }) => {
     const [resources, setResources] = useState<IResource[]>([]);
     const [selectedResource, setSelectedResource] = useState<IResource | null>(null);
     const [currentWeekStart, setCurrentWeekStart] = useState<Date>(getMonday(new Date()));
@@ -325,7 +330,13 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     };
 
     return (
-        <div className="ach-container">
+        <div
+            className="ach-container"
+            style={{
+                width: width > 0 ? width : "100%",
+                height: height > 0 ? height : "100%"
+            }}
+        >
             {/* Panel Izquierdo: Lista de Recursos */}
             <div className="ach-sidebar">
                 <Text variant="large" className="ach-sidebar-title">Mis Recursos</Text>
