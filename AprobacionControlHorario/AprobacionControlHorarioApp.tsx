@@ -2,6 +2,10 @@ import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { IInputs } from "./generated/ManifestTypes";
 import { Spinner, SpinnerSize, Icon, Stack, Text, IconButton, PrimaryButton } from '@fluentui/react';
+import enUS from "./strings/en-US";
+import esES from "./strings/es-ES";
+import ptPT from "./strings/pt-PT";
+import { ITranslations } from "./strings/types";
 
 export interface IAppProps {
     context: ComponentFramework.Context<IInputs>;
@@ -21,6 +25,7 @@ interface ITimeEntry {
     end: Date;
     typeFormatted: string;
     description: string;
+    clientName: string;
     hasOt: boolean;
 }
 
@@ -32,10 +37,33 @@ interface IDailyReport {
     endHour: number | null;
 }
 
-const VERSION = "v1.0.9";
+const VERSION = "v1.0.12";
+const DRAFT_STATUS = 1;
+const INACTIVE_STATUS = 2;
 const SENT_STATUS = 909540001;
 const APPROVED_STATUS = 909540002;
 const REJECTED_STATUS = 909540003;
+const MAX_TIMELINE_ZOOM = 300;
+
+const messages: Record<Locale, ITranslations> = {
+    "es-ES": esES,
+    "pt-PT": ptPT,
+    "en-US": enUS
+};
+
+type MessageKey = keyof ITranslations;
+type Locale = "es-ES" | "pt-PT" | "en-US";
+
+const translate = (locale: Locale, key: MessageKey): string => messages[locale][key];
+
+const getLocale = (languageId: number): Locale => {
+    if (languageId === 2070) return "pt-PT";
+    if (languageId === 1033) return "en-US";
+    return "es-ES";
+};
+
+const interpolate = (template: string, values: Record<string, string>): string =>
+    template.replace(/\{([^}]+)\}/g, (_, key: string) => values[key] ?? `{${key}}`);
 
 const getRecord = (value: unknown): Record<string, unknown> | null =>
     typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
@@ -45,21 +73,21 @@ const isSentStatus = (statusCode: number | null): boolean => statusCode === SENT
 const getLocalDateKey = (date: Date): string =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
-const getStatusClassName = (status: string): string => {
-    const normalizedStatus = status.toLocaleLowerCase("es-ES");
-    if (normalizedStatus.includes("rechaz") || normalizedStatus.includes("reject")) {
-        return "ach-day-status--rejected";
-    }
-    if (normalizedStatus.includes("pendient") || normalizedStatus.includes("pending")) {
-        return "ach-day-status--pending";
-    }
-    if (normalizedStatus.includes("aprob") || normalizedStatus.includes("approv") || normalizedStatus.includes("valid")) {
-        return "ach-day-status--approved";
-    }
-    if (normalizedStatus.includes("enviad") || normalizedStatus.includes("sent")) {
-        return "ach-day-status--sent";
-    }
+const getStatusClassName = (statusCode: number | null): string => {
+    if (statusCode === REJECTED_STATUS) return "ach-day-status--rejected";
+    if (statusCode === SENT_STATUS) return "ach-day-status--sent";
+    if (statusCode === APPROVED_STATUS) return "ach-day-status--approved";
+    if (statusCode === DRAFT_STATUS || statusCode === INACTIVE_STATUS) return "ach-day-status--pending";
     return "ach-day-status--default";
+};
+
+const getReportStatusLabel = (statusCode: number | null, fallback: string, locale: Locale): string => {
+    if (statusCode === DRAFT_STATUS) return messages[locale].reportStatusDraft;
+    if (statusCode === INACTIVE_STATUS) return messages[locale].reportStatusInactive;
+    if (statusCode === SENT_STATUS) return messages[locale].reportStatusSent;
+    if (statusCode === APPROVED_STATUS) return messages[locale].reportStatusApproved;
+    if (statusCode === REJECTED_STATUS) return messages[locale].reportStatusRejected;
+    return fallback || messages[locale].unknownStatus;
 };
 
 const getTimeOfDay = (value: unknown): number | null => {
@@ -77,10 +105,50 @@ const formatTimeOfDay = (time: number): string => {
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 };
 
-const renderTimeAxis = (side: "left" | "right") => (
+const formatDuration = (minutes: number, locale: Locale): string => {
+    const totalMinutes = Math.round(minutes);
+    const hours = Math.floor(totalMinutes / 60);
+    const remainingMinutes = totalMinutes % 60;
+    if (locale === "en-US") {
+        return `${hours} ${messages[locale].hoursUnit}${hours === 1 ? "" : "s"}${remainingMinutes > 0 ? ` ${remainingMinutes} ${messages[locale].minutesShort}` : ""}`;
+    }
+    return `${hours} ${messages[locale].hoursShort}${remainingMinutes > 0 ? ` ${remainingMinutes} ${messages[locale].minutesShort}` : ""}`;
+};
+
+const getDayProgress = (
+    entries: ITimeEntry[],
+    startHour: number | null,
+    endHour: number | null,
+    locale: Locale
+): string => {
+    if (startHour === null || endHour === null || endHour <= startHour) {
+        return messages[locale].dailyGoalUnavailable;
+    }
+
+    const targetMinutes = (endHour - startHour) * 60;
+    const workedMinutes = entries.reduce((total, entry) =>
+        total + Math.max(0, entry.end.getTime() - entry.start.getTime()) / 60000, 0
+    );
+    const differenceMinutes = Math.round(targetMinutes - workedMinutes);
+
+    if (differenceMinutes > 0) {
+        return interpolate(messages[locale].remaining, { duration: formatDuration(differenceMinutes, locale) });
+    }
+    if (differenceMinutes < 0) {
+        return interpolate(messages[locale].exceeded, { duration: formatDuration(Math.abs(differenceMinutes), locale) });
+    }
+    return messages[locale].objectiveMet;
+};
+
+const renderTimeAxis = (side: "left" | "right", locale: Locale) => (
     <div className={`ach-axis ach-axis--${side}`} aria-hidden="true">
         {[0, 4, 8, 12, 16, 20, 24].map(hour => (
-            <div key={hour} className="ach-tick" style={{ top: `${(hour / 24) * 100}%` }}>
+            <div
+                key={hour}
+                className="ach-tick"
+                title={`${translate(locale, "timeAxis")} ${String(hour).padStart(2, "0")}:00`}
+                style={{ top: `${(hour / 24) * 100}%` }}
+            >
                 {String(hour).padStart(2, "0")}:00
             </div>
         ))}
@@ -91,6 +159,8 @@ const getErrorMessage = (error: unknown): string =>
     error instanceof Error ? error.message : String(error);
 
 export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, region, width, height }) => {
+    const locale = getLocale(context.userSettings.languageId);
+    const t = (key: MessageKey): string => translate(locale, key);
     const [resources, setResources] = useState<IResource[]>([]);
     const [selectedResource, setSelectedResource] = useState<IResource | null>(null);
     const [resourceSearch, setResourceSearch] = useState<string>("");
@@ -111,9 +181,9 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         date.setDate(date.getDate() + index);
         return dailyReports[getLocalDateKey(date)];
     }).filter((report): report is IDailyReport => Boolean(report && isSentStatus(report.statusCode)));
-    const normalizedResourceSearch = resourceSearch.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es-ES");
+    const normalizedResourceSearch = resourceSearch.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase(locale);
     const filteredResources = resources.filter(resource =>
-        resource.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es-ES").includes(normalizedResourceSearch)
+        resource.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase(locale).includes(normalizedResourceSearch)
     );
 
     // Función auxiliar para obtener el Lunes de una fecha dada
@@ -133,7 +203,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     };
 
     const changeTimelineZoom = (offset: number) => {
-        setTimelineZoom(zoom => Math.min(160, Math.max(60, zoom + offset)));
+        setTimelineZoom(zoom => Math.min(MAX_TIMELINE_ZOOM, Math.max(60, zoom + offset)));
     };
 
     useEffect(() => {
@@ -186,14 +256,14 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                     setSelectedResource(loadedResources[0]);
                 }
             } catch (err: unknown) {
-                setErrorMsg("Error cargando recursos: " + getErrorMessage(err));
+                setErrorMsg(translate(locale, "resourceLoadError") + getErrorMessage(err));
             } finally {
                 setIsLoadingResources(false);
             }
         };
 
         void loadResources();
-    }, [context, region]);
+    }, [context, region, locale]);
 
     // 2. Cargar Entradas de Tiempo al cambiar el recurso o la semana
     useEffect(() => {
@@ -216,6 +286,39 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                         `?$select=sec_partediarioid,sec_fecha,statuscode,sec_horainicio,sec_horafin&$filter=statecode eq 0 and _sec_recursoid_value eq ${selectedResource.id} and sec_fecha ge ${currentWeekStart.toISOString()} and sec_fecha le ${sunday.toISOString()}`
                     )
                 ]);
+
+                const workOrderIds = Array.from(new Set(results.entities
+                    .map(entry => {
+                        const id: unknown = entry._msdyn_workorder_value;
+                        return id;
+                    })
+                    .filter((id): id is string => typeof id === "string" && id.length > 0)
+                    .map(id => id.replace(/[{}]/g, "").toLowerCase())));
+                const workOrderClientNames: Record<string, string> = {};
+                const workOrderIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+                for (const id of workOrderIds) {
+                    if (!workOrderIdPattern.test(id)) {
+                        throw new Error(translate(locale, "workOrderIdInvalid"));
+                    }
+                }
+
+                if (workOrderIds.length > 0) {
+                    const workOrderFilter = workOrderIds
+                        .map(id => `msdyn_workorderid eq ${id}`)
+                        .join(" or ");
+                    const workOrders = await context.webAPI.retrieveMultipleRecords(
+                        "msdyn_workorder",
+                        `?$select=msdyn_workorderid,_msdyn_serviceaccount_value&$filter=${workOrderFilter}`
+                    );
+                    workOrders.entities.forEach(workOrder => {
+                        const id: unknown = workOrder.msdyn_workorderid;
+                        const clientName: unknown = workOrder["_msdyn_serviceaccount_value@OData.Community.Display.V1.FormattedValue"];
+                        if (typeof id === "string" && typeof clientName === "string") {
+                            workOrderClientNames[id.toLowerCase()] = clientName;
+                        }
+                    });
+                }
                 
                 // Agrupar por fecha (YYYY-MM-DD)
                 const grouped: Record<string, ITimeEntry[]> = {};
@@ -265,6 +368,9 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                         end,
                         typeFormatted: typeof formattedType === "string" ? formattedType : "",
                         description: typeof description === "string" ? description : "",
+                        clientName: typeof e._msdyn_workorder_value === "string"
+                            ? workOrderClientNames[e._msdyn_workorder_value.replace(/[{}]/g, "").toLowerCase()] || translate(locale, "clientUnavailable")
+                            : translate(locale, "clientUnavailable"),
                         hasOt: e._msdyn_workorder_value !== null && e._msdyn_workorder_value !== undefined
                     };
                     
@@ -276,14 +382,14 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                 setTimeEntries(grouped);
                 setDailyReports(reportsByDate);
             } catch (err: unknown) {
-                setErrorMsg("Error cargando el parte horario: " + getErrorMessage(err));
+                setErrorMsg(translate(locale, "entriesLoadError") + getErrorMessage(err));
             } finally {
                 setIsLoadingEntries(false);
             }
         };
 
         void loadWeekEntries();
-    }, [selectedResource, currentWeekStart, context, refreshKey]);
+    }, [selectedResource, currentWeekStart, context, refreshKey, locale]);
 
     const approveAllSentReports = async () => {
         if (isApproving || sentReports.length === 0) return;
@@ -301,10 +407,14 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                 const details = failures
                     .map(result => result.status === "rejected" ? getErrorMessage(result.reason) : "")
                     .join("; ");
-                setErrorMsg(`Error aprobando ${failures.length} de ${sentReports.length} partes: ${details}`);
+                setErrorMsg(interpolate(t("approvePartialError"), {
+                    failed: String(failures.length),
+                    total: String(sentReports.length),
+                    details
+                }));
             }
         } catch (err: unknown) {
-            setErrorMsg("Error aprobando los partes enviados: " + getErrorMessage(err));
+            setErrorMsg(t("approveError") + getErrorMessage(err));
         } finally {
             setIsApproving(false);
         }
@@ -313,7 +423,6 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     const updateReportStatus = async (report: IDailyReport, action: "approve" | "reject") => {
         if (isLoadingEntries || updatingReportIds.includes(report.id)) return;
 
-        const actionLabel = action === "approve" ? "aprobando" : "rechazando";
         setUpdatingReportIds(ids => ids.includes(report.id) ? ids : [...ids, report.id]);
         setErrorMsg("");
         try {
@@ -321,10 +430,20 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
             await context.webAPI.updateRecord("sec_partediario", report.id, { statuscode: targetStatus });
             setRefreshKey(key => key + 1);
         } catch (err: unknown) {
-            setErrorMsg(`Error ${actionLabel} el parte diario: ${getErrorMessage(err)}`);
+            setErrorMsg((action === "approve" ? t("approveSingleError") : t("rejectError")) + getErrorMessage(err));
         } finally {
             setUpdatingReportIds(ids => ids.filter(id => id !== report.id));
         }
+    };
+
+    const openDailyReport = (report: IDailyReport) => {
+        void context.navigation.openForm({
+            entityName: "sec_partediario",
+            entityId: report.id,
+            openInNewWindow: true
+        }).catch((err: unknown) => {
+            setErrorMsg(t("openReportError") + getErrorMessage(err));
+        });
     };
 
     // Función auxiliar para colores/iconos emulando ParteDiario
@@ -355,37 +474,55 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     const renderDayColumn = (dateKey: string, dateObj: Date) => {
         const dayEntries = timeEntries[dateKey] || [];
         const dailyReport = dailyReports[dateKey];
-        const dayName = dateObj.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric' });
-        const statusClassName = getStatusClassName(dailyReport?.statusReason || "");
+        const dayName = dateObj.toLocaleDateString(locale, { weekday: 'long', day: 'numeric' });
+        const statusClassName = getStatusClassName(dailyReport?.statusCode ?? null);
         const canUpdateReport = Boolean(dailyReport && isSentStatus(dailyReport.statusCode));
         const isUpdatingReport = Boolean(dailyReport && updatingReportIds.includes(dailyReport.id));
         
         return (
             <div className="ach-col" key={dateKey}>
                 <div className="ach-col-sticky-header">
-                    <div className="ach-col-header">{dayName.charAt(0).toUpperCase() + dayName.slice(1)}</div>
-                    <div className={`ach-day-status ${statusClassName}`} title={dailyReport?.statusReason || undefined}>
-                        {dailyReport ? dailyReport.statusReason || "Estado no disponible" : "Sin parte generado"}
+                    <div className="ach-col-header" title={dayName}>
+                        {dayName.charAt(0).toLocaleUpperCase(locale) + dayName.slice(1)}
                     </div>
+                    {dailyReport ? (
+                        <button
+                            type="button"
+                            className={`ach-day-status ${statusClassName}`}
+                            title={t("openDailyReport")}
+                            onClick={() => openDailyReport(dailyReport)}
+                        >
+                            <span>{getReportStatusLabel(dailyReport.statusCode, dailyReport.statusReason, locale)}</span>
+                            <span className="ach-day-progress" title={t("progressTooltip")}>
+                                {getDayProgress(dayEntries, dailyReport.startHour, dailyReport.endHour, locale)}
+                            </span>
+                        </button>
+                    ) : (
+                        <div className={`ach-day-status ${statusClassName}`} title={t("noDailyReportTooltip")}>
+                            {t("noDailyReport")}
+                        </div>
+                    )}
                     {canUpdateReport && dailyReport && (
                         <div className="ach-day-actions">
                             <button
                                 type="button"
                                 className="ach-day-action ach-day-action--reject"
+                                title={interpolate(t("rejectReportTooltip"), { day: dayName })}
                                 onClick={() => void updateReportStatus(dailyReport, "reject")}
                                 disabled={isLoadingEntries || isApproving || isUpdatingReport}
-                                aria-label={`Rechazar parte del ${dayName}`}
+                                aria-label={interpolate(t("rejectReportTooltip"), { day: dayName })}
                             >
-                                Rechazar
+                                {t("rejectReport")}
                             </button>
                             <button
                                 type="button"
                                 className="ach-day-action ach-day-action--approve"
+                                title={interpolate(t("approveReportTooltip"), { day: dayName })}
                                 onClick={() => void updateReportStatus(dailyReport, "approve")}
                                 disabled={isLoadingEntries || isApproving || isUpdatingReport}
-                                aria-label={`Aprobar parte del ${dayName}`}
+                                aria-label={interpolate(t("approveReportTooltip"), { day: dayName })}
                             >
-                                Aprobar
+                                {t("approveReport")}
                             </button>
                         </div>
                     )}
@@ -394,18 +531,22 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                 {!dailyReport ? (
                     <div className="ach-empty-state">
                         <Icon iconName="Calendar" className="ach-empty-icon" />
-                        <Text>Sin parte generado</Text>
+                        <Text title={t("noDailyReportTooltip")}>{t("noDailyReport")}</Text>
                     </div>
                 ) : (
                     <div className="ach-timeline">
                         {dailyReport.startHour !== null && (
                             <div className="ach-work-marker" style={{ top: `${(dailyReport.startHour / 24) * 100}%` }}>
-                                <span>Inicio {formatTimeOfDay(dailyReport.startHour)}</span>
+                                <span title={`${t("start")} ${formatTimeOfDay(dailyReport.startHour)}`}>
+                                    {t("start")} {formatTimeOfDay(dailyReport.startHour)}
+                                </span>
                             </div>
                         )}
                         {dailyReport.endHour !== null && (
                             <div className="ach-work-marker ach-work-marker-end" style={{ top: `${(dailyReport.endHour / 24) * 100}%` }}>
-                                <span>Fin {formatTimeOfDay(dailyReport.endHour)}</span>
+                                <span title={`${t("end")} ${formatTimeOfDay(dailyReport.endHour)}`}>
+                                    {t("end")} {formatTimeOfDay(dailyReport.endHour)}
+                                </span>
                             </div>
                         )}
                         
@@ -419,11 +560,20 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                             const timeStr = `${String(e.start.getHours()).padStart(2,'0')}:${String(e.start.getMinutes()).padStart(2,'0')} - ${String(e.end.getHours()).padStart(2,'0')}:${String(e.end.getMinutes()).padStart(2,'0')}`;
 
                             return (
-                                <div key={e.id} className="ach-entry" style={{ top: `${top}%`, height: `${height}%`, backgroundColor: bg }}>
+                                <div
+                                    key={e.id}
+                                    className="ach-entry"
+                                    title={interpolate(t("entryTooltip"), {
+                                        type: e.typeFormatted,
+                                        time: timeStr,
+                                        client: e.clientName
+                                    })}
+                                    style={{ top: `${top}%`, height: `${height}%`, backgroundColor: bg }}
+                                >
                                     <div className="ach-entry-inner">
                                         <span className="ach-entry-icon">{icon}</span>
                                         <span className="ach-entry-time">{timeStr}</span>
-                                        {height > 3 && <span className="ach-entry-desc">{e.description || e.typeFormatted}</span>}
+                                        <span className="ach-entry-client" title={e.clientName}>{e.clientName}</span>
                                     </div>
                                 </div>
                             );
@@ -437,7 +587,10 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     const getWeekRangeLabel = () => {
         const sunday = new Date(currentWeekStart);
         sunday.setDate(sunday.getDate() + 6);
-        return `Semana del ${currentWeekStart.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} al ${sunday.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}`;
+        return interpolate(t("weekRange"), {
+            start: currentWeekStart.toLocaleDateString(locale, { day: 'numeric', month: 'short' }),
+            end: sunday.toLocaleDateString(locale, { day: 'numeric', month: 'short' })
+        });
     };
 
     return (
@@ -450,34 +603,46 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         >
             {/* Panel Izquierdo: Lista de Recursos */}
             <div className="ach-sidebar">
-                <Text variant="large" className="ach-sidebar-title">Mis Recursos</Text>
-                <div className="ach-resource-search">
-                    <Icon iconName="Search" className="ach-resource-search-icon" />
+                <Text variant="large" className="ach-sidebar-title" title={t("resourcesTitle")}>
+                    {t("resourcesTitle")}
+                </Text>
+                <div className="ach-resource-search" title={t("resourceSearchTooltip")}>
+                    <Icon iconName="Search" className="ach-resource-search-icon" aria-hidden="true" />
                     <input
                         type="search"
                         className="ach-resource-search-input"
                         value={resourceSearch}
                         onChange={event => setResourceSearch(event.currentTarget.value)}
-                        placeholder="Buscar recurso..."
-                        aria-label="Buscar recursos"
+                        placeholder={t("searchResource")}
+                        aria-label={t("searchResources")}
+                        title={t("resourceSearchTooltip")}
                     />
                 </div>
                 {isLoadingResources ? (
-                    <Spinner size={SpinnerSize.medium} />
+                    <Spinner size={SpinnerSize.medium} label={t("loadingResources")} />
                 ) : (
                     <div className="ach-resource-list">
                         {resources.length === 0 ? (
-                            <Text className="ach-no-data">No hay recursos bajo tu supervisión.</Text>
+                            <Text className="ach-no-data">{t("noResources")}</Text>
                         ) : filteredResources.length === 0 ? (
-                            <Text className="ach-no-data">No se encontraron recursos.</Text>
+                            <Text className="ach-no-data">{t("noResourcesFound")}</Text>
                         ) : (
                             filteredResources.map(r => (
                                 <div 
                                     key={r.id} 
                                     className={`ach-resource-item ${selectedResource?.id === r.id ? 'active' : ''}`}
+                                    title={interpolate(t("resourceTooltip"), { resource: r.name })}
+                                    role="button"
+                                    tabIndex={0}
                                     onClick={() => setSelectedResource(r)}
+                                    onKeyDown={event => {
+                                        if (event.key === "Enter" || event.key === " ") {
+                                            event.preventDefault();
+                                            setSelectedResource(r);
+                                        }
+                                    }}
                                 >
-                                    <Icon iconName="Contact" className="ach-res-icon"/> {r.name}
+                                    <Icon iconName="Contact" className="ach-res-icon" aria-hidden="true"/> {r.name}
                                 </div>
                             ))
                         )}
@@ -491,37 +656,56 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                 
                 <div className="ach-header">
                     <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 10 }}>
-                        <Text variant="xLarge" style={{ fontWeight: 600 }}>Aprobaciones</Text>
-                        {selectedResource && <Text variant="large" style={{ color: '#0078d4' }}>| {selectedResource.name}</Text>}
+                        <Text variant="xLarge" style={{ fontWeight: 600 }} title={t("approvalsTitle")}>
+                            {t("approvalsTitle")}
+                        </Text>
+                        {selectedResource && (
+                            <Text variant="large" style={{ color: '#0078d4' }} title={selectedResource.name}>
+                                | {selectedResource.name}
+                            </Text>
+                        )}
                     </Stack>
 
                     <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
                         <PrimaryButton
-                            text={isApproving ? "Aprobando..." : "Aprobar todo"}
+                            text={isApproving ? t("approving") : t("approveWeek")}
+                            title={t("approveWeekTooltip")}
                             onClick={() => void approveAllSentReports()}
                             disabled={isApproving || isLoadingEntries || updatingReportIds.length > 0 || sentReports.length === 0}
                         />
+                        <IconButton
+                            iconProps={{ iconName: "Refresh" }}
+                            title={t("refreshTooltip")}
+                            ariaLabel={t("refresh")}
+                            disabled={isLoadingEntries || isApproving || updatingReportIds.length > 0 || !selectedResource}
+                            onClick={() => {
+                                setErrorMsg("");
+                                setRefreshKey(key => key + 1);
+                            }}
+                        />
                     </Stack>
                     <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 2 }} className="ach-week-selector">
-                        <IconButton className="ach-week-button" iconProps={{ iconName: 'ChevronLeft' }} title="Semana anterior" ariaLabel="Semana anterior" onClick={() => changeWeek(-1)} />
-                        <Text className="ach-week-label">
+                        <IconButton className="ach-week-button" iconProps={{ iconName: 'ChevronLeft' }} title={t("previousWeek")} ariaLabel={t("previousWeek")} onClick={() => changeWeek(-1)} />
+                        <Text className="ach-week-label" title={getWeekRangeLabel()}>
                             {getWeekRangeLabel()}
                         </Text>
-                        <IconButton className="ach-week-button" iconProps={{ iconName: 'ChevronRight' }} title="Semana siguiente" ariaLabel="Semana siguiente" onClick={() => changeWeek(1)} />
-                        <span className="ach-zoom-controls" aria-label="Zoom de la línea de tiempo">
+                        <IconButton className="ach-week-button" iconProps={{ iconName: 'ChevronRight' }} title={t("nextWeek")} ariaLabel={t("nextWeek")} onClick={() => changeWeek(1)} />
+                        <span className="ach-zoom-controls" aria-label={t("timelineZoom")} title={t("timelineZoom")}>
                             <IconButton
                                 iconProps={{ iconName: 'ZoomOut' }}
-                                title="Reducir zoom"
-                                ariaLabel="Reducir zoom"
+                                title={t("zoomOut")}
+                                ariaLabel={t("zoomOut")}
                                 disabled={timelineZoom <= 60}
                                 onClick={() => changeTimelineZoom(-10)}
                             />
-                            <Text className="ach-zoom-level">{timelineZoom}%</Text>
+                            <Text className="ach-zoom-level" title={`${t("timelineZoom")}: ${timelineZoom}%`}>
+                                {timelineZoom}%
+                            </Text>
                             <IconButton
                                 iconProps={{ iconName: 'ZoomIn' }}
-                                title="Aumentar zoom"
-                                ariaLabel="Aumentar zoom"
-                                disabled={timelineZoom >= 160}
+                                title={t("zoomIn")}
+                                ariaLabel={t("zoomIn")}
+                                disabled={timelineZoom >= MAX_TIMELINE_ZOOM}
                                 onClick={() => changeTimelineZoom(10)}
                             />
                         </span>
@@ -530,7 +714,9 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
 
                 <div className="ach-grid-container" ref={gridContainerRef}>
                     {isLoadingEntries ? (
-                        <div className="ach-loading-overlay"><Spinner size={SpinnerSize.large} label="Cargando partes..." /></div>
+                        <div className="ach-loading-overlay">
+                            <Spinner size={SpinnerSize.large} label={t("loadingReports")} />
+                        </div>
                     ) : null}
                     
                     <div
@@ -541,13 +727,13 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                                 : "100%"
                         }}
                     >
-                        {renderTimeAxis("left")}
+                        {renderTimeAxis("left", locale)}
                         {Array.from({ length: 7 }).map((_, i) => {
                             const d = new Date(currentWeekStart);
                             d.setDate(d.getDate() + i);
                             return renderDayColumn(getLocalDateKey(d), d);
                         })}
-                        {renderTimeAxis("right")}
+                        {renderTimeAxis("right", locale)}
                     </div>
                 </div>
             </div>

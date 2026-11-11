@@ -224,16 +224,41 @@
 
 .ach-day-status {
     box-sizing: border-box;
-    height: 26px;
-    line-height: 13px;
-    padding: 6px 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 40px;
+    padding: 4px;
+    border: 0;
     border-bottom: 1px solid #d8d6d4;
+    font-family: 'Segoe UI', system-ui, sans-serif;
     font-size: 11px;
     font-weight: 600;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+button.ach-day-status {
+    cursor: pointer;
+}
+
+button.ach-day-status:hover {
+    filter: brightness(0.97);
+}
+
+button.ach-day-status:focus-visible {
+    outline: 2px solid #0078d4;
+    outline-offset: -2px;
+}
+
+.ach-day-progress {
+    margin-top: 2px;
+    font-size: 10px;
+    font-weight: 400;
 }
 
 .ach-day-status--sent {
@@ -415,19 +440,31 @@
 .ach-entry-inner {
     padding: 3px;
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
+    gap: 4px;
     height: 100%;
+    min-width: 0;
 }
 
-.ach-entry-icon { font-size: 11px; margin-bottom: 1px; }
-.ach-entry-time { font-size: 9px; font-weight: bold; margin-bottom: 1px; }
-.ach-entry-desc {
+.ach-entry-icon {
+    flex: 0 0 auto;
+    font-size: 11px;
+}
+
+.ach-entry-time {
+    flex: 0 0 auto;
+    font-size: 9px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.ach-entry-client {
+    flex: 1 1 auto;
+    min-width: 0;
     opacity: 0.9;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    width: 100%;
     font-size: 9px;
 }
 
