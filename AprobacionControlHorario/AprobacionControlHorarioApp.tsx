@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { IInputs } from "./generated/ManifestTypes";
-import { Spinner, SpinnerSize, Icon, Stack, Text, IconButton, PrimaryButton } from '@fluentui/react';
+import { Spinner, SpinnerSize, Icon, Stack, Text, IconButton, PrimaryButton, DefaultButton, Dialog, DialogType, DialogFooter, TextField } from '@fluentui/react';
 import enUS from "./strings/en-US";
 import esES from "./strings/es-ES";
 import ptPT from "./strings/pt-PT";
@@ -37,7 +37,7 @@ interface IDailyReport {
     endHour: number | null;
 }
 
-const VERSION = "v1.0.12";
+const VERSION = "v1.0.13";
 const DRAFT_STATUS = 1;
 const INACTIVE_STATUS = 2;
 const SENT_STATUS = 909540001;
@@ -174,6 +174,9 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     const [isLoadingEntries, setIsLoadingEntries] = useState<boolean>(false);
     const [isApproving, setIsApproving] = useState<boolean>(false);
     const [updatingReportIds, setUpdatingReportIds] = useState<string[]>([]);
+    const [reportToReject, setReportToReject] = useState<IDailyReport | null>(null);
+    const [rejectionReason, setRejectionReason] = useState<string>("");
+    const [isRejecting, setIsRejecting] = useState<boolean>(false);
     const [refreshKey, setRefreshKey] = useState<number>(0);
     const [errorMsg, setErrorMsg] = useState<string>("");
     const sentReports = Array.from({ length: 7 }, (_, index) => {
@@ -391,21 +394,73 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         void loadWeekEntries();
     }, [selectedResource, currentWeekStart, context, refreshKey, locale]);
 
+    const getCurrentUserFullName = async (): Promise<string> => {
+        const currentUserId = context.userSettings.userId.replace(/[{}]/g, "");
+        const currentUser = await context.webAPI.retrieveRecord("systemuser", currentUserId, "?$select=fullname");
+        const fullName: unknown = currentUser.fullname;
+        if (typeof fullName !== "string" || fullName.trim().length === 0) {
+            throw new Error(t("currentUserNameUnavailable"));
+        }
+        return fullName.trim();
+    };
+
+    const getExistingReportComments = async (reportId: string): Promise<string> => {
+        try {
+            const currentReport = await context.webAPI.retrieveRecord(
+                "sec_partediario",
+                reportId,
+                "?$select=sec_comentarios"
+            );
+            const existingComments: unknown = currentReport?.sec_comentarios;
+            return typeof existingComments === "string" ? existingComments : "";
+        } catch {
+            return "";
+        }
+    };
+
+    const updateReportWithAudit = async (
+        report: IDailyReport,
+        action: "approve" | "reject",
+        actorName: string,
+        actionDate: Date,
+        reason = ""
+    ): Promise<void> => {
+        const comments = await getExistingReportComments(report.id);
+        const date = actionDate.toLocaleString(locale);
+        const auditEntry = action === "approve"
+            ? `Parte Aprobado - ${actorName} - ${date}`
+            : `Parte Rechazado - ${reason.trim()} - ${actorName} - ${date}`;
+        const updatedComments = comments.length > 0
+            ? `${comments}${comments.endsWith("\n") ? "" : "\n"}${auditEntry}`
+            : auditEntry;
+
+        await context.webAPI.updateRecord("sec_partediario", report.id, {
+            statuscode: action === "approve" ? APPROVED_STATUS : REJECTED_STATUS,
+            sec_comentarios: updatedComments
+        });
+    };
+
     const approveAllSentReports = async () => {
         if (isApproving || sentReports.length === 0) return;
 
         setIsApproving(true);
         setErrorMsg("");
         try {
+            const actorName = await getCurrentUserFullName();
+            const actionDate = new Date();
             const updateResults = await Promise.allSettled(sentReports.map(report =>
-                context.webAPI.updateRecord("sec_partediario", report.id, { statuscode: APPROVED_STATUS })
+                updateReportWithAudit(report, "approve", actorName, actionDate)
             ));
-            const failures = updateResults.filter(result => result.status === "rejected");
+            const failures = updateResults
+                .map((result, index) => ({ result, report: sentReports[index] }))
+                .filter(item => item.result.status === "rejected");
             setRefreshKey(key => key + 1);
 
             if (failures.length > 0) {
                 const details = failures
-                    .map(result => result.status === "rejected" ? getErrorMessage(result.reason) : "")
+                    .map(({ result, report }) => result.status === "rejected"
+                        ? `${report.id}: ${getErrorMessage(result.reason)}`
+                        : "")
                     .join("; ");
                 setErrorMsg(interpolate(t("approvePartialError"), {
                     failed: String(failures.length),
@@ -420,19 +475,51 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         }
     };
 
-    const updateReportStatus = async (report: IDailyReport, action: "approve" | "reject") => {
+    const updateReportStatus = async (report: IDailyReport): Promise<void> => {
         if (isLoadingEntries || updatingReportIds.includes(report.id)) return;
 
         setUpdatingReportIds(ids => ids.includes(report.id) ? ids : [...ids, report.id]);
         setErrorMsg("");
         try {
-            const targetStatus = action === "approve" ? APPROVED_STATUS : REJECTED_STATUS;
-            await context.webAPI.updateRecord("sec_partediario", report.id, { statuscode: targetStatus });
+            const actorName = await getCurrentUserFullName();
+            await updateReportWithAudit(report, "approve", actorName, new Date());
             setRefreshKey(key => key + 1);
         } catch (err: unknown) {
-            setErrorMsg((action === "approve" ? t("approveSingleError") : t("rejectError")) + getErrorMessage(err));
+            setErrorMsg(t("approveSingleError") + getErrorMessage(err));
         } finally {
             setUpdatingReportIds(ids => ids.filter(id => id !== report.id));
+        }
+    };
+
+    const openRejectDialog = (report: IDailyReport) => {
+        setErrorMsg("");
+        setRejectionReason("");
+        setReportToReject(report);
+    };
+
+    const closeRejectDialog = () => {
+        if (isRejecting) return;
+        setReportToReject(null);
+        setRejectionReason("");
+    };
+
+    const confirmRejection = async () => {
+        if (!reportToReject || !rejectionReason.trim() || rejectionReason.length > 500 || isRejecting) return;
+
+        setIsRejecting(true);
+        setUpdatingReportIds(ids => ids.includes(reportToReject.id) ? ids : [...ids, reportToReject.id]);
+        setErrorMsg("");
+        try {
+            const actorName = await getCurrentUserFullName();
+            await updateReportWithAudit(reportToReject, "reject", actorName, new Date(), rejectionReason);
+            setRefreshKey(key => key + 1);
+            setReportToReject(null);
+            setRejectionReason("");
+        } catch (err: unknown) {
+            setErrorMsg(t("rejectError") + getErrorMessage(err));
+        } finally {
+            setIsRejecting(false);
+            setUpdatingReportIds(ids => ids.filter(id => id !== reportToReject.id));
         }
     };
 
@@ -508,7 +595,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                                 type="button"
                                 className="ach-day-action ach-day-action--reject"
                                 title={interpolate(t("rejectReportTooltip"), { day: dayName })}
-                                onClick={() => void updateReportStatus(dailyReport, "reject")}
+                                onClick={() => openRejectDialog(dailyReport)}
                                 disabled={isLoadingEntries || isApproving || isUpdatingReport}
                                 aria-label={interpolate(t("rejectReportTooltip"), { day: dayName })}
                             >
@@ -518,7 +605,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                                 type="button"
                                 className="ach-day-action ach-day-action--approve"
                                 title={interpolate(t("approveReportTooltip"), { day: dayName })}
-                                onClick={() => void updateReportStatus(dailyReport, "approve")}
+                                onClick={() => void updateReportStatus(dailyReport)}
                                 disabled={isLoadingEntries || isApproving || isUpdatingReport}
                                 aria-label={interpolate(t("approveReportTooltip"), { day: dayName })}
                             >
@@ -601,6 +688,44 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                 height: height > 0 ? height : "100%"
             }}
         >
+            <Dialog
+                hidden={!reportToReject}
+                onDismiss={closeRejectDialog}
+                dialogContentProps={{
+                    type: DialogType.normal,
+                    title: t("rejectDialogTitle"),
+                    subText: t("rejectDialogDescription")
+                }}
+                modalProps={{ isBlocking: isRejecting }}
+            >
+                <TextField
+                    label={t("rejectReasonLabel")}
+                    value={rejectionReason}
+                    onChange={(_, value) => setRejectionReason((value ?? "").slice(0, 500))}
+                    maxLength={500}
+                    multiline
+                    rows={4}
+                    autoFocus
+                    required
+                    description={interpolate(t("characterCount"), {
+                        count: String(rejectionReason.length),
+                        max: "500"
+                    })}
+                    errorMessage={reportToReject && !rejectionReason.trim() ? t("rejectReasonRequired") : undefined}
+                />
+                <DialogFooter>
+                    <DefaultButton
+                        text={t("cancel")}
+                        onClick={closeRejectDialog}
+                        disabled={isRejecting}
+                    />
+                    <PrimaryButton
+                        text={isRejecting ? t("rejecting") : t("rejectReport")}
+                        onClick={() => void confirmRejection()}
+                        disabled={isRejecting || !rejectionReason.trim() || rejectionReason.length > 500}
+                    />
+                </DialogFooter>
+            </Dialog>
             {/* Panel Izquierdo: Lista de Recursos */}
             <div className="ach-sidebar">
                 <Text variant="large" className="ach-sidebar-title" title={t("resourcesTitle")}>

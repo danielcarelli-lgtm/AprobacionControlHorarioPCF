@@ -13,6 +13,13 @@ export interface ITranslations {
     approveReport: string;
     rejectReportTooltip: string;
     approveReportTooltip: string;
+    rejectDialogTitle: string;
+    rejectDialogDescription: string;
+    rejectReasonLabel: string;
+    rejectReasonRequired: string;
+    characterCount: string;
+    cancel: string;
+    rejecting: string;
     dailyGoalUnavailable: string;
     remaining: string;
     exceeded: string;
@@ -29,6 +36,7 @@ export interface ITranslations {
     approveError: string;
     approveSingleError: string;
     rejectError: string;
+    currentUserNameUnavailable: string;
     approvePartialError: string;
     openReportError: string;
     approvalsTitle: string;
