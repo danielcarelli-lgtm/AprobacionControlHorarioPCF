@@ -37,7 +37,7 @@ interface IDailyReport {
     endHour: number | null;
 }
 
-const VERSION = "v1.0.13";
+const VERSION = "v1.0.18";
 const DRAFT_STATUS = 1;
 const INACTIVE_STATUS = 2;
 const SENT_STATUS = 909540001;
@@ -155,8 +155,32 @@ const renderTimeAxis = (side: "left" | "right", locale: Locale) => (
     </div>
 );
 
-const getErrorMessage = (error: unknown): string =>
-    error instanceof Error ? error.message : String(error);
+const getErrorMessage = (error: unknown): string => {
+    if (error instanceof Error) {
+        const message = error.message || "Error desconocido";
+        if (message.includes("reading 'replace'") || message.includes("Cannot read properties of null")) {
+            return `${message} (context.userSettings.userId es null/undefined; revisa el contexto de Power Apps)`;
+        }
+        return message;
+    }
+
+    if (typeof error === "string" && error.length > 0) {
+        return error;
+    }
+
+    if (error === null || error === undefined) {
+        return "Error desconocido";
+    }
+
+    try {
+        return JSON.stringify(error);
+    } catch {
+        return "Error desconocido";
+    }
+};
+
+const normalizeRecordId = (value: string | null | undefined): string =>
+    typeof value === "string" ? value.replace(/[{}]/g, "") : "";
 
 export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, region, width, height }) => {
     const locale = getLocale(context.userSettings.languageId);
@@ -233,12 +257,14 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                 
                 // Si es España (1), filtramos por el email del usuario logueado
                 if (region === "1") {
-                    const currentUserId = context.userSettings.userId.replace(/[{}]/g, "");
-                    const userRecord = await context.webAPI.retrieveRecord("systemuser", currentUserId, "?$select=internalemailaddress");
-                    const userEmail: unknown = userRecord.internalemailaddress;
-                    
-                    if (typeof userEmail === "string" && userEmail.length > 0) {
-                        filter += ` and pdw_mangeremail eq '${userEmail}'`;
+                    const currentUserId = normalizeRecordId(context.userSettings.userId);
+                    if (currentUserId.length > 0) {
+                        const userRecord = await context.webAPI.retrieveRecord("systemuser", currentUserId, "?$select=internalemailaddress");
+                        const userEmail: unknown = userRecord.internalemailaddress;
+
+                        if (typeof userEmail === "string" && userEmail.length > 0) {
+                            filter += ` and pdw_mangeremail eq '${userEmail}'`;
+                        }
                     }
                 }
 
@@ -395,13 +421,42 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     }, [selectedResource, currentWeekStart, context, refreshKey, locale]);
 
     const getCurrentUserFullName = async (): Promise<string> => {
-        const currentUserId = context.userSettings.userId.replace(/[{}]/g, "");
-        const currentUser = await context.webAPI.retrieveRecord("systemuser", currentUserId, "?$select=fullname");
-        const fullName: unknown = currentUser.fullname;
-        if (typeof fullName !== "string" || fullName.trim().length === 0) {
+        const currentUserId = normalizeRecordId(context.userSettings?.userId);
+        if (currentUserId.length === 0) {
             throw new Error(t("currentUserNameUnavailable"));
         }
-        return fullName.trim();
+
+        const currentUser = await context.webAPI.retrieveRecord(
+            "systemuser",
+            currentUserId,
+            "?$select=firstname,lastname,fullname,internalemailaddress"
+        );
+        const fullName: unknown = currentUser?.fullname;
+        if (typeof fullName === "string" && fullName.trim().length > 0) {
+            return fullName.trim();
+        }
+
+        const firstName: unknown = currentUser?.firstname;
+        const lastName: unknown = currentUser?.lastname;
+        const combinedName = [firstName, lastName]
+            .filter((name): name is string => typeof name === "string" && name.trim().length > 0)
+            .map(name => name.trim())
+            .join(" ");
+        if (combinedName.length > 0) {
+            return combinedName;
+        }
+
+        const email: unknown = currentUser?.internalemailaddress;
+        if (typeof email === "string" && email.trim().length > 0) {
+            return email.trim();
+        }
+
+        const contextUserName = context.userSettings?.userName;
+        if (typeof contextUserName === "string" && contextUserName.trim().length > 0) {
+            return contextUserName.trim();
+        }
+
+        throw new Error(t("currentUserNameUnavailable"));
     };
 
     const getExistingReportComments = async (reportId: string): Promise<string> => {
