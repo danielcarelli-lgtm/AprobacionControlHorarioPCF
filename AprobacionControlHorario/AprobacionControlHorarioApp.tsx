@@ -37,7 +37,7 @@ interface IDailyReport {
     endHour: number | null;
 }
 
-const VERSION = "v1.0.18";
+const VERSION = "v1.0.19";
 const DRAFT_STATUS = 1;
 const INACTIVE_STATUS = 2;
 const SENT_STATUS = 909540001;
@@ -200,6 +200,9 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     const [updatingReportIds, setUpdatingReportIds] = useState<string[]>([]);
     const [reportToReject, setReportToReject] = useState<IDailyReport | null>(null);
     const [rejectionReason, setRejectionReason] = useState<string>("");
+    const [rejectionActorName, setRejectionActorName] = useState<string>("");
+    const [rejectionActorError, setRejectionActorError] = useState<string>("");
+    const [isLoadingRejectionActor, setIsLoadingRejectionActor] = useState<boolean>(false);
     const [isRejecting, setIsRejecting] = useState<boolean>(false);
     const [refreshKey, setRefreshKey] = useState<number>(0);
     const [errorMsg, setErrorMsg] = useState<string>("");
@@ -459,6 +462,32 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         throw new Error(t("currentUserNameUnavailable"));
     };
 
+    useEffect(() => {
+        if (!reportToReject) return;
+
+        let isCurrentRequest = true;
+        setRejectionActorName("");
+        setRejectionActorError("");
+        setIsLoadingRejectionActor(true);
+
+        void (async () => {
+            try {
+                const actorName = await getCurrentUserFullName();
+                if (isCurrentRequest) setRejectionActorName(actorName);
+            } catch (err: unknown) {
+                if (isCurrentRequest) {
+                    setRejectionActorError(`${t("currentUserNameUnavailable")} ${getErrorMessage(err)}`);
+                }
+            } finally {
+                if (isCurrentRequest) setIsLoadingRejectionActor(false);
+            }
+        })();
+
+        return () => {
+            isCurrentRequest = false;
+        };
+    }, [reportToReject, context, locale]);
+
     const getExistingReportComments = async (reportId: string): Promise<string> => {
         try {
             const currentReport = await context.webAPI.retrieveRecord(
@@ -556,17 +585,19 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         if (isRejecting) return;
         setReportToReject(null);
         setRejectionReason("");
+        setRejectionActorName("");
+        setRejectionActorError("");
+        setIsLoadingRejectionActor(false);
     };
 
     const confirmRejection = async () => {
-        if (!reportToReject || !rejectionReason.trim() || rejectionReason.length > 500 || isRejecting) return;
+        if (!reportToReject || !rejectionActorName || !rejectionReason.trim() || rejectionReason.length > 500 || isRejecting) return;
 
         setIsRejecting(true);
         setUpdatingReportIds(ids => ids.includes(reportToReject.id) ? ids : [...ids, reportToReject.id]);
         setErrorMsg("");
         try {
-            const actorName = await getCurrentUserFullName();
-            await updateReportWithAudit(reportToReject, "reject", actorName, new Date(), rejectionReason);
+            await updateReportWithAudit(reportToReject, "reject", rejectionActorName, new Date(), rejectionReason);
             setRefreshKey(key => key + 1);
             setReportToReject(null);
             setRejectionReason("");
@@ -753,6 +784,12 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                 }}
                 modalProps={{ isBlocking: isRejecting }}
             >
+                <Text variant="medium">
+                    {t("rejectActorLabel")}: {isLoadingRejectionActor ? t("loadingCurrentUser") : rejectionActorName || t("currentUserNameUnavailable")}
+                </Text>
+                {rejectionActorError && (
+                    <Text variant="small" role="alert">{rejectionActorError}</Text>
+                )}
                 <TextField
                     label={t("rejectReasonLabel")}
                     value={rejectionReason}
@@ -777,7 +814,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                     <PrimaryButton
                         text={isRejecting ? t("rejecting") : t("rejectReport")}
                         onClick={() => void confirmRejection()}
-                        disabled={isRejecting || !rejectionReason.trim() || rejectionReason.length > 500}
+                        disabled={isRejecting || isLoadingRejectionActor || !rejectionActorName || !rejectionReason.trim() || rejectionReason.length > 500}
                     />
                 </DialogFooter>
             </Dialog>

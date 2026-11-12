@@ -39,6 +39,8 @@ const translations: ITranslations = {
     approveSingleError: "Erro ao aprovar o registo diário: ",
     rejectError: "Erro ao rejeitar o registo diário: ",
     currentUserNameUnavailable: "Não foi possível obter o nome ou o e-mail do utilizador atual.",
+    rejectActorLabel: "Rejeição efetuada por",
+    loadingCurrentUser: "A obter utilizador...",
     approvePartialError: "Erro ao aprovar {failed} de {total} registos: {details}",
     openReportError: "Erro ao abrir o registo diário: ",
     approvalsTitle: "Aprovações",

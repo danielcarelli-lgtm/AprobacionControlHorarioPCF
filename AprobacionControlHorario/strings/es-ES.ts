@@ -39,6 +39,8 @@ const translations: ITranslations = {
     approveSingleError: "Error aprobando el parte diario: ",
     rejectError: "Error rechazando el parte diario: ",
     currentUserNameUnavailable: "No se pudo obtener el nombre ni el correo del usuario actual.",
+    rejectActorLabel: "Rechazo realizado por",
+    loadingCurrentUser: "Obteniendo usuario...",
     approvePartialError: "Error aprobando {failed} de {total} partes: {details}",
     openReportError: "Error abriendo el parte diario: ",
     approvalsTitle: "Aprobaciones",
