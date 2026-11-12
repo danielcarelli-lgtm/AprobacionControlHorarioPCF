@@ -36,9 +36,6 @@ export interface ITranslations {
     approveError: string;
     approveSingleError: string;
     rejectError: string;
-    currentUserNameUnavailable: string;
-    rejectActorLabel: string;
-    loadingCurrentUser: string;
     approvePartialError: string;
     openReportError: string;
     approvalsTitle: string;

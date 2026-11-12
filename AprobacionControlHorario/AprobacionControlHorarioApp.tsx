@@ -37,7 +37,7 @@ interface IDailyReport {
     endHour: number | null;
 }
 
-const VERSION = "v1.0.20";
+const VERSION = "v1.0.30";
 const DRAFT_STATUS = 1;
 const INACTIVE_STATUS = 2;
 const SENT_STATUS = 909540001;
@@ -110,9 +110,9 @@ const formatDuration = (minutes: number, locale: Locale): string => {
     const hours = Math.floor(totalMinutes / 60);
     const remainingMinutes = totalMinutes % 60;
     if (locale === "en-US") {
-        return `${hours} ${messages[locale].hoursUnit}${hours === 1 ? "" : "s"}${remainingMinutes > 0 ? ` ${remainingMinutes} ${messages[locale].minutesShort}` : ""}`;
+        return `${hours} ${messages[locale].hoursUnit}${hours === 1 ? "" : "s"}${remainingMinutes > 0 ? ` ${remainingMinutes}${messages[locale].minutesShort}` : ""}`;
     }
-    return `${hours} ${messages[locale].hoursShort}${remainingMinutes > 0 ? ` ${remainingMinutes} ${messages[locale].minutesShort}` : ""}`;
+    return `${hours} ${messages[locale].hoursShort}${remainingMinutes > 0 ? ` ${remainingMinutes}${messages[locale].minutesShort}` : ""}`;
 };
 
 const getDayProgress = (
@@ -193,9 +193,6 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     const [updatingReportIds, setUpdatingReportIds] = useState<string[]>([]);
     const [reportToReject, setReportToReject] = useState<IDailyReport | null>(null);
     const [rejectionReason, setRejectionReason] = useState<string>("");
-    const [rejectionActorName, setRejectionActorName] = useState<string>("");
-    const [rejectionActorError, setRejectionActorError] = useState<string>("");
-    const [isLoadingRejectionActor, setIsLoadingRejectionActor] = useState<boolean>(false);
     const [isRejecting, setIsRejecting] = useState<boolean>(false);
     const [refreshKey, setRefreshKey] = useState<number>(0);
     const [errorMsg, setErrorMsg] = useState<string>("");
@@ -401,31 +398,6 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         void loadWeekEntries();
     }, [selectedResource, currentWeekStart, context, refreshKey, locale]);
 
-    const getCurrentUserFullName = (): string => {
-        const contextUserName = context.userSettings?.userName;
-        if (typeof contextUserName === "string" && contextUserName.trim().length > 0) {
-            return contextUserName.trim();
-        }
-
-        throw new Error(t("currentUserNameUnavailable"));
-    };
-
-    useEffect(() => {
-        if (!reportToReject) return;
-
-        setRejectionActorName("");
-        setRejectionActorError("");
-        setIsLoadingRejectionActor(true);
-
-        try {
-            setRejectionActorName(getCurrentUserFullName());
-        } catch (err: unknown) {
-            setRejectionActorError(`${t("currentUserNameUnavailable")} ${getErrorMessage(err)}`);
-        } finally {
-            setIsLoadingRejectionActor(false);
-        }
-    }, [reportToReject, context, locale]);
-
     const getExistingReportComments = async (reportId: string): Promise<string> => {
         try {
             const currentReport = await context.webAPI.retrieveRecord(
@@ -443,15 +415,14 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     const updateReportWithAudit = async (
         report: IDailyReport,
         action: "approve" | "reject",
-        actorName: string,
         actionDate: Date,
         reason = ""
     ): Promise<void> => {
         const comments = await getExistingReportComments(report.id);
         const date = actionDate.toLocaleString(locale);
         const auditEntry = action === "approve"
-            ? `Parte Aprobado - ${actorName} - ${date}`
-            : `Parte Rechazado - ${reason.trim()} - ${actorName} - ${date}`;
+    ? `Parte Aprobado - ${date}`
+    : `Parte Rechazado - ${reason.trim()} - ${date}`;
         const updatedComments = comments.length > 0
             ? `${comments}${comments.endsWith("\n") ? "" : "\n"}${auditEntry}`
             : auditEntry;
@@ -468,10 +439,9 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         setIsApproving(true);
         setErrorMsg("");
         try {
-            const actorName = getCurrentUserFullName();
             const actionDate = new Date();
             const updateResults = await Promise.allSettled(sentReports.map(report =>
-                updateReportWithAudit(report, "approve", actorName, actionDate)
+                updateReportWithAudit(report, "approve", actionDate)
             ));
             const failures = updateResults
                 .map((result, index) => ({ result, report: sentReports[index] }))
@@ -503,8 +473,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         setUpdatingReportIds(ids => ids.includes(report.id) ? ids : [...ids, report.id]);
         setErrorMsg("");
         try {
-            const actorName = getCurrentUserFullName();
-            await updateReportWithAudit(report, "approve", actorName, new Date());
+            await updateReportWithAudit(report, "approve", new Date());
             setRefreshKey(key => key + 1);
         } catch (err: unknown) {
             setErrorMsg(t("approveSingleError") + getErrorMessage(err));
@@ -523,19 +492,16 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         if (isRejecting) return;
         setReportToReject(null);
         setRejectionReason("");
-        setRejectionActorName("");
-        setRejectionActorError("");
-        setIsLoadingRejectionActor(false);
     };
 
     const confirmRejection = async () => {
-        if (!reportToReject || !rejectionActorName || !rejectionReason.trim() || rejectionReason.length > 500 || isRejecting) return;
+        if (!reportToReject || !rejectionReason.trim() || rejectionReason.length > 500 || isRejecting) return;
 
         setIsRejecting(true);
         setUpdatingReportIds(ids => ids.includes(reportToReject.id) ? ids : [...ids, reportToReject.id]);
         setErrorMsg("");
         try {
-            await updateReportWithAudit(reportToReject, "reject", rejectionActorName, new Date(), rejectionReason);
+            await updateReportWithAudit(reportToReject, "reject", new Date(), rejectionReason);
             setRefreshKey(key => key + 1);
             setReportToReject(null);
             setRejectionReason("");
@@ -668,6 +634,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                             const top = (startDec / 24) * 100;
                             const height = ((endDec - startDec) / 24) * 100;
                             const { bg, icon } = getVisualProperties(e);
+                            const clientUnavailable = e.clientName === t("clientUnavailable");
                             const timeStr = `${String(e.start.getHours()).padStart(2,'0')}:${String(e.start.getMinutes()).padStart(2,'0')} - ${String(e.end.getHours()).padStart(2,'0')}:${String(e.end.getMinutes()).padStart(2,'0')}`;
 
                             return (
@@ -677,14 +644,14 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                                     title={interpolate(t("entryTooltip"), {
                                         type: e.typeFormatted,
                                         time: timeStr,
-                                        client: e.clientName
+                                        client: clientUnavailable ? "" : e.clientName
                                     })}
                                     style={{ top: `${top}%`, height: `${height}%`, backgroundColor: bg }}
                                 >
                                     <div className="ach-entry-inner">
                                         <span className="ach-entry-icon">{icon}</span>
                                         <span className="ach-entry-time">{timeStr}</span>
-                                        <span className="ach-entry-client" title={e.clientName}>{e.clientName}</span>
+                                        {!clientUnavailable && <span className="ach-entry-client" title={e.clientName}>{e.clientName}</span>}
                                     </div>
                                 </div>
                             );
@@ -722,12 +689,6 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                 }}
                 modalProps={{ isBlocking: isRejecting }}
             >
-                <Text variant="medium">
-                    {t("rejectActorLabel")}: {isLoadingRejectionActor ? t("loadingCurrentUser") : rejectionActorName || t("currentUserNameUnavailable")}
-                </Text>
-                {rejectionActorError && (
-                    <Text variant="small" role="alert">{rejectionActorError}</Text>
-                )}
                 <TextField
                     label={t("rejectReasonLabel")}
                     value={rejectionReason}
@@ -752,7 +713,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                     <PrimaryButton
                         text={isRejecting ? t("rejecting") : t("rejectReport")}
                         onClick={() => void confirmRejection()}
-                        disabled={isRejecting || isLoadingRejectionActor || !rejectionActorName || !rejectionReason.trim() || rejectionReason.length > 500}
+                        disabled={isRejecting || !rejectionReason.trim() || rejectionReason.length > 500}
                     />
                 </DialogFooter>
             </Dialog>
@@ -784,7 +745,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                         ) : (
                             filteredResources.map(r => (
                                 <div 
-                                    key={r.id} 
+                                    key={r.id}
                                     className={`ach-resource-item ${selectedResource?.id === r.id ? 'active' : ''}`}
                                     title={interpolate(t("resourceTooltip"), { resource: r.name })}
                                     role="button"
