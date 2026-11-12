@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest>
-  <control namespace="sec" constructor="AprobacionControlHorario" version="1.0.19" display-name-key="AprobacionControlHorario" description-key="Panel de supervisión semanal de control horario" control-type="virtual" >
+  <control namespace="sec" constructor="AprobacionControlHorario" version="1.0.20" display-name-key="AprobacionControlHorario" description-key="Panel de supervisión semanal de control horario" control-type="virtual" >
     
     <type-group name="AnyType">
       <type>SingleLine.Text</type>
@@ -10,7 +10,7 @@
     <property name="boundField" display-name-key="Campo Base" description-key="Campo base donde se aloja el control" of-type-group="AnyType" usage="bound" required="true" />
     
     <!-- Parámetro desplegable para seleccionar la región -->
-    <property name="sec_region" display-name-key="Región" description-key="Determina el filtrado de recursos" of-type="Enum" usage="input" required="true">
+    <property name="sec_region" display-name-key="Región" description-key="Parámetro regional" of-type="Enum" usage="input" required="true">
       <value name="España" display-name-key="España">1</value>
       <value name="Portugal" display-name-key="Portugal">2</value>
       <value name="Latam" display-name-key="Latam">3</value>

@@ -54,7 +54,6 @@ El control consulta y actualiza datos mediante la Web API de Dataverse. El usuar
 | Tabla de Dataverse | Uso |
 |---|---|
 | `bookableresource` | Lista de recursos activos y sus nombres. |
-| `systemuser` | Obtención del correo del usuario actual para el filtro de recursos en España. |
 | `msdyn_timeentry` | Entradas de tiempo del recurso durante la semana. |
 | `msdyn_workorder` | Asociación de una entrada con el nombre del cliente. |
 | `sec_partediario` | Parte diario, fechas, horario objetivo y estado; se actualiza al aprobar o rechazar. |
@@ -65,7 +64,7 @@ El manifiesto del control requiere:
 - El parámetro de entrada `sec_region`: **España (1)**, **Portugal (2)** o **Latam (3)**.
 - La característica Web API de Power Apps.
 
-**Filtrado regional actual:** los recursos inactivos se excluyen. Cuando la región es España, además se filtran por el correo del usuario actual comparándolo con `pdw_mangeremail`. Para Portugal y Latam no se aplica un filtro regional adicional en esta versión.
+**Filtrado regional actual:** solo se excluyen los recursos inactivos. No se aplica un filtro por usuario en ninguna región. El nombre del usuario actual para el registro del rechazo se obtiene del contexto del control, sin consultar `systemuser`.
 
 Los valores de estado utilizados por el control son:
 

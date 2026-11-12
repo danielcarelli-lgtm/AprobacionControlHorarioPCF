@@ -38,7 +38,7 @@ const translations: ITranslations = {
     approveError: "Error approving sent reports: ",
     approveSingleError: "Error approving the daily report: ",
     rejectError: "Error rejecting the daily report: ",
-    currentUserNameUnavailable: "Unable to retrieve the current user's name or email.",
+    currentUserNameUnavailable: "Unable to retrieve the current user's name.",
     rejectActorLabel: "Rejected by",
     loadingCurrentUser: "Loading user...",
     approvePartialError: "Error approving {failed} of {total} reports: {details}",

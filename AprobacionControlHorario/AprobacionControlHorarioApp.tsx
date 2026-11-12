@@ -37,7 +37,7 @@ interface IDailyReport {
     endHour: number | null;
 }
 
-const VERSION = "v1.0.19";
+const VERSION = "v1.0.20";
 const DRAFT_STATUS = 1;
 const INACTIVE_STATUS = 2;
 const SENT_STATUS = 909540001;
@@ -157,11 +157,7 @@ const renderTimeAxis = (side: "left" | "right", locale: Locale) => (
 
 const getErrorMessage = (error: unknown): string => {
     if (error instanceof Error) {
-        const message = error.message || "Error desconocido";
-        if (message.includes("reading 'replace'") || message.includes("Cannot read properties of null")) {
-            return `${message} (context.userSettings.userId es null/undefined; revisa el contexto de Power Apps)`;
-        }
-        return message;
+        return error.message || "Error desconocido";
     }
 
     if (typeof error === "string" && error.length > 0) {
@@ -178,9 +174,6 @@ const getErrorMessage = (error: unknown): string => {
         return "Error desconocido";
     }
 };
-
-const normalizeRecordId = (value: string | null | undefined): string =>
-    typeof value === "string" ? value.replace(/[{}]/g, "") : "";
 
 export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, region, width, height }) => {
     const locale = getLocale(context.userSettings.languageId);
@@ -256,22 +249,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         const loadResources = async () => {
             setIsLoadingResources(true);
             try {
-                let filter = `statecode eq 0`; // Solo recursos activos
-                
-                // Si es España (1), filtramos por el email del usuario logueado
-                if (region === "1") {
-                    const currentUserId = normalizeRecordId(context.userSettings.userId);
-                    if (currentUserId.length > 0) {
-                        const userRecord = await context.webAPI.retrieveRecord("systemuser", currentUserId, "?$select=internalemailaddress");
-                        const userEmail: unknown = userRecord.internalemailaddress;
-
-                        if (typeof userEmail === "string" && userEmail.length > 0) {
-                            filter += ` and pdw_mangeremail eq '${userEmail}'`;
-                        }
-                    }
-                }
-
-                const query = `?$select=bookableresourceid,name&$filter=${filter}&$orderby=name asc`;
+                const query = `?$select=bookableresourceid,name&$filter=statecode eq 0&$orderby=name asc`;
                 const results = await context.webAPI.retrieveMultipleRecords("bookableresource", query);
                 
                 const loadedResources = results.entities.reduce<IResource[]>((loaded, resource) => {
@@ -423,37 +401,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         void loadWeekEntries();
     }, [selectedResource, currentWeekStart, context, refreshKey, locale]);
 
-    const getCurrentUserFullName = async (): Promise<string> => {
-        const currentUserId = normalizeRecordId(context.userSettings?.userId);
-        if (currentUserId.length === 0) {
-            throw new Error(t("currentUserNameUnavailable"));
-        }
-
-        const currentUser = await context.webAPI.retrieveRecord(
-            "systemuser",
-            currentUserId,
-            "?$select=firstname,lastname,fullname,internalemailaddress"
-        );
-        const fullName: unknown = currentUser?.fullname;
-        if (typeof fullName === "string" && fullName.trim().length > 0) {
-            return fullName.trim();
-        }
-
-        const firstName: unknown = currentUser?.firstname;
-        const lastName: unknown = currentUser?.lastname;
-        const combinedName = [firstName, lastName]
-            .filter((name): name is string => typeof name === "string" && name.trim().length > 0)
-            .map(name => name.trim())
-            .join(" ");
-        if (combinedName.length > 0) {
-            return combinedName;
-        }
-
-        const email: unknown = currentUser?.internalemailaddress;
-        if (typeof email === "string" && email.trim().length > 0) {
-            return email.trim();
-        }
-
+    const getCurrentUserFullName = (): string => {
         const contextUserName = context.userSettings?.userName;
         if (typeof contextUserName === "string" && contextUserName.trim().length > 0) {
             return contextUserName.trim();
@@ -465,27 +413,17 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     useEffect(() => {
         if (!reportToReject) return;
 
-        let isCurrentRequest = true;
         setRejectionActorName("");
         setRejectionActorError("");
         setIsLoadingRejectionActor(true);
 
-        void (async () => {
-            try {
-                const actorName = await getCurrentUserFullName();
-                if (isCurrentRequest) setRejectionActorName(actorName);
-            } catch (err: unknown) {
-                if (isCurrentRequest) {
-                    setRejectionActorError(`${t("currentUserNameUnavailable")} ${getErrorMessage(err)}`);
-                }
-            } finally {
-                if (isCurrentRequest) setIsLoadingRejectionActor(false);
-            }
-        })();
-
-        return () => {
-            isCurrentRequest = false;
-        };
+        try {
+            setRejectionActorName(getCurrentUserFullName());
+        } catch (err: unknown) {
+            setRejectionActorError(`${t("currentUserNameUnavailable")} ${getErrorMessage(err)}`);
+        } finally {
+            setIsLoadingRejectionActor(false);
+        }
     }, [reportToReject, context, locale]);
 
     const getExistingReportComments = async (reportId: string): Promise<string> => {
@@ -530,7 +468,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         setIsApproving(true);
         setErrorMsg("");
         try {
-            const actorName = await getCurrentUserFullName();
+            const actorName = getCurrentUserFullName();
             const actionDate = new Date();
             const updateResults = await Promise.allSettled(sentReports.map(report =>
                 updateReportWithAudit(report, "approve", actorName, actionDate)
@@ -565,7 +503,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         setUpdatingReportIds(ids => ids.includes(report.id) ? ids : [...ids, report.id]);
         setErrorMsg("");
         try {
-            const actorName = await getCurrentUserFullName();
+            const actorName = getCurrentUserFullName();
             await updateReportWithAudit(report, "approve", actorName, new Date());
             setRefreshKey(key => key + 1);
         } catch (err: unknown) {
