@@ -37,13 +37,20 @@ interface IDailyReport {
     endHour: number | null;
 }
 
-const VERSION = "v1.0.30";
+interface IUserContextInfo {
+    id: string;
+    name: string;
+    email: string;
+}
+
+const VERSION = "v1.0.37";
 const DRAFT_STATUS = 1;
 const INACTIVE_STATUS = 2;
 const SENT_STATUS = 909540001;
 const APPROVED_STATUS = 909540002;
 const REJECTED_STATUS = 909540003;
 const MAX_TIMELINE_ZOOM = 300;
+const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const messages: Record<Locale, ITranslations> = {
     "es-ES": esES,
@@ -88,6 +95,48 @@ const getReportStatusLabel = (statusCode: number | null, fallback: string, local
     if (statusCode === APPROVED_STATUS) return messages[locale].reportStatusApproved;
     if (statusCode === REJECTED_STATUS) return messages[locale].reportStatusRejected;
     return fallback || messages[locale].unknownStatus;
+};
+
+const getAuditEntry = (
+    locale: Locale,
+    action: "approve" | "reject",
+    approverName: string,
+    date: string,
+    comment: string
+): string => {
+    const labels = locale === "pt-PT"
+        ? {
+            status: "Estado",
+            approver: "Utilizador aprovador",
+            date: "Data",
+            comment: "Comentário",
+            approved: "Aprovado",
+            rejected: "Rejeitado",
+            approvalComment: "Aprovação do parte"
+        }
+        : locale === "en-US"
+            ? {
+                status: "Status",
+                approver: "Approving user",
+                date: "Date",
+                comment: "Comment",
+                approved: "Approved",
+                rejected: "Rejected",
+                approvalComment: "Timesheet approval"
+            }
+            : {
+                status: "Estado",
+                approver: "Usuario aprobador",
+                date: "Fecha",
+                comment: "Comentario",
+                approved: "Aprobado",
+                rejected: "Rechazado",
+                approvalComment: "Aprobación del parte"
+            };
+    const status = action === "approve" ? labels.approved : labels.rejected;
+    const auditComment = action === "approve" ? labels.approvalComment : comment;
+
+    return `${labels.status}: ${status} - ${labels.approver}: ${approverName} - ${labels.date}: ${date} - ${labels.comment}: ${auditComment}`;
 };
 
 const getTimeOfDay = (value: unknown): number | null => {
@@ -175,9 +224,59 @@ const getErrorMessage = (error: unknown): string => {
     }
 };
 
+const getGlobalUserSettings = (): Record<string, unknown> => {
+    try {
+        const globalScope = globalThis as unknown as {
+            Xrm?: {
+                Utility?: {
+                    getGlobalContext?: () => { userSettings?: unknown };
+                };
+            };
+        };
+        const globalContext = globalScope.Xrm?.Utility?.getGlobalContext?.();
+        return getRecord(globalContext?.userSettings) ?? {};
+    } catch {
+        return {};
+    }
+};
+
+const getRuntimeUserInfo = (context: ComponentFramework.Context<IInputs>): IUserContextInfo => {
+    const contextSettings = getRecord(context.userSettings) ?? {};
+    const globalSettings = getGlobalUserSettings();
+    const readString = (...keys: string[]): string => {
+        for (const key of keys) {
+            const contextValue = contextSettings[key];
+            if (typeof contextValue === "string" && contextValue.trim().length > 0) {
+                return contextValue.trim();
+            }
+
+            const globalValue = globalSettings[key];
+            if (typeof globalValue === "string" && globalValue.trim().length > 0) {
+                return globalValue.trim();
+            }
+        }
+
+        return "";
+    };
+
+    const rawId = readString("userId").replace(/[{}]/g, "");
+    const name = readString("userName") || "Usuario actual";
+    const email = readString("internalemailaddress", "emailAddress", "email") || (name.includes("@") ? name : "");
+
+    return {
+        id: rawId,
+        name,
+        email
+    };
+};
+
 export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, region, width, height }) => {
     const locale = getLocale(context.userSettings.languageId);
     const t = (key: MessageKey): string => translate(locale, key);
+    const contextRef = useRef(context);
+    contextRef.current = context;
+    const initialUserContextInfo = getRuntimeUserInfo(context);
+    const [userContextInfo, setUserContextInfo] = useState<IUserContextInfo>(initialUserContextInfo);
     const [resources, setResources] = useState<IResource[]>([]);
     const [selectedResource, setSelectedResource] = useState<IResource | null>(null);
     const [resourceSearch, setResourceSearch] = useState<string>("");
@@ -205,6 +304,80 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     const filteredResources = resources.filter(resource =>
         resource.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase(locale).includes(normalizedResourceSearch)
     );
+
+    useEffect(() => {
+        let isMounted = true;
+        const retryDelays = [0, 250, 1000, 2500, 5000];
+
+        const loadUserContextInfo = async () => {
+            for (const delay of retryDelays) {
+                if (delay > 0) {
+                    await new Promise<void>(resolve => window.setTimeout(resolve, delay));
+                }
+
+                if (!isMounted) return;
+
+                const currentContext = contextRef.current;
+                const runtimeUserInfo = getRuntimeUserInfo(currentContext);
+                const runtimeUserId = GUID_PATTERN.test(runtimeUserInfo.id) ? runtimeUserInfo.id : "";
+                if (runtimeUserInfo.id || runtimeUserInfo.name !== "Usuario actual" || runtimeUserInfo.email) {
+                    setUserContextInfo(current => ({
+                        ...current,
+                        ...runtimeUserInfo,
+                        id: runtimeUserId || runtimeUserInfo.id || current.id
+                    }));
+                }
+
+                if (!runtimeUserId) continue;
+
+                let fullname = "";
+                let email = "";
+
+                try {
+                    const currentUser = await currentContext.webAPI.retrieveRecord(
+                        "systemuser",
+                        runtimeUserId,
+                        "?$select=fullname,internalemailaddress"
+                    );
+                    fullname = typeof currentUser.fullname === "string" ? currentUser.fullname : "";
+                    email = typeof currentUser.internalemailaddress === "string" ? currentUser.internalemailaddress : "";
+                } catch {
+                    // Se intenta la consulta por colección como fallback del host de Power Apps.
+                }
+
+                if (!email) {
+                    try {
+                        const userResults = await currentContext.webAPI.retrieveMultipleRecords(
+                            "systemuser",
+                            `?$select=fullname,internalemailaddress&$filter=systemuserid eq ${runtimeUserId}`
+                        );
+                        const currentUser = userResults.entities[0];
+                        fullname = fullname || (typeof currentUser?.fullname === "string" ? currentUser.fullname : "");
+                        email = typeof currentUser?.internalemailaddress === "string" ? currentUser.internalemailaddress : "";
+                    } catch {
+                        // El nombre y GUID siguen disponibles aunque el correo no pueda leerse.
+                    }
+                }
+
+                if (isMounted) {
+                    setUserContextInfo(current => ({
+                        ...current,
+                        id: runtimeUserId,
+                        name: fullname || current.name,
+                        email: email || current.email
+                    }));
+                }
+
+                if (email) return;
+            }
+        };
+
+        void loadUserContextInfo();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     // Función auxiliar para obtener el Lunes de una fecha dada
     function getMonday(d: Date): Date {
@@ -420,9 +593,11 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     ): Promise<void> => {
         const comments = await getExistingReportComments(report.id);
         const date = actionDate.toLocaleString(locale);
-        const auditEntry = action === "approve"
-    ? `Parte Aprobado - ${date}`
-    : `Parte Rechazado - ${reason.trim()} - ${date}`;
+        const runtimeUserInfo = getRuntimeUserInfo(context);
+        const approverName = userContextInfo.name !== "Usuario actual"
+            ? userContextInfo.name
+            : runtimeUserInfo.name;
+        const auditEntry = getAuditEntry(locale, action, approverName, date, reason.trim());
         const updatedComments = comments.length > 0
             ? `${comments}${comments.endsWith("\n") ? "" : "\n"}${auditEntry}`
             : auditEntry;
@@ -800,31 +975,42 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                             }}
                         />
                     </Stack>
-                    <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 2 }} className="ach-week-selector">
-                        <IconButton className="ach-week-button" iconProps={{ iconName: 'ChevronLeft' }} title={t("previousWeek")} ariaLabel={t("previousWeek")} onClick={() => changeWeek(-1)} />
-                        <Text className="ach-week-label" title={getWeekRangeLabel()}>
-                            {getWeekRangeLabel()}
-                        </Text>
-                        <IconButton className="ach-week-button" iconProps={{ iconName: 'ChevronRight' }} title={t("nextWeek")} ariaLabel={t("nextWeek")} onClick={() => changeWeek(1)} />
-                        <span className="ach-zoom-controls" aria-label={t("timelineZoom")} title={t("timelineZoom")}>
-                            <IconButton
-                                iconProps={{ iconName: 'ZoomOut' }}
-                                title={t("zoomOut")}
-                                ariaLabel={t("zoomOut")}
-                                disabled={timelineZoom <= 60}
-                                onClick={() => changeTimelineZoom(-10)}
-                            />
-                            <Text className="ach-zoom-level" title={`${t("timelineZoom")}: ${timelineZoom}%`}>
-                                {timelineZoom}%
+                    <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }} className="ach-week-area">
+                        <div
+                            className="ach-user-context"
+                            title={`Usuario: ${userContextInfo.name} | Correo: ${userContextInfo.email || "No disponible"} | GUID: ${userContextInfo.id || "No disponible"}`}
+                            aria-label={`Usuario actual: ${userContextInfo.name}, ${userContextInfo.email || "correo no disponible"}, GUID ${userContextInfo.id || "no disponible"}`}
+                        >
+                            <span className="ach-user-context-name">{userContextInfo.name}</span>
+                            <span>{userContextInfo.email || "Correo no disponible"}</span>
+                            <span className="ach-user-context-id">{userContextInfo.id || "GUID no disponible"}</span>
+                        </div>
+                        <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 2 }} className="ach-week-selector">
+                            <IconButton className="ach-week-button" iconProps={{ iconName: 'ChevronLeft' }} title={t("previousWeek")} ariaLabel={t("previousWeek")} onClick={() => changeWeek(-1)} />
+                            <Text className="ach-week-label" title={getWeekRangeLabel()}>
+                                {getWeekRangeLabel()}
                             </Text>
-                            <IconButton
-                                iconProps={{ iconName: 'ZoomIn' }}
-                                title={t("zoomIn")}
-                                ariaLabel={t("zoomIn")}
-                                disabled={timelineZoom >= MAX_TIMELINE_ZOOM}
-                                onClick={() => changeTimelineZoom(10)}
-                            />
-                        </span>
+                            <IconButton className="ach-week-button" iconProps={{ iconName: 'ChevronRight' }} title={t("nextWeek")} ariaLabel={t("nextWeek")} onClick={() => changeWeek(1)} />
+                            <span className="ach-zoom-controls" aria-label={t("timelineZoom")} title={t("timelineZoom")}>
+                                <IconButton
+                                    iconProps={{ iconName: 'ZoomOut' }}
+                                    title={t("zoomOut")}
+                                    ariaLabel={t("zoomOut")}
+                                    disabled={timelineZoom <= 60}
+                                    onClick={() => changeTimelineZoom(-10)}
+                                />
+                                <Text className="ach-zoom-level" title={`${t("timelineZoom")}: ${timelineZoom}%`}>
+                                    {timelineZoom}%
+                                </Text>
+                                <IconButton
+                                    iconProps={{ iconName: 'ZoomIn' }}
+                                    title={t("zoomIn")}
+                                    ariaLabel={t("zoomIn")}
+                                    disabled={timelineZoom >= MAX_TIMELINE_ZOOM}
+                                    onClick={() => changeTimelineZoom(10)}
+                                />
+                            </span>
+                        </Stack>
                     </Stack>
                 </div>
 
