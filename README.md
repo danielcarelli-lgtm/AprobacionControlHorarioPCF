@@ -5,7 +5,7 @@
 ![Power Apps PCF](https://img.shields.io/badge/Power%20Apps-PCF-742774?logo=powerapps&logoColor=white)
 ![React](https://img.shields.io/badge/React-16.14-61DAFB?logo=react&logoColor=20232A)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
-![Versión](https://img.shields.io/badge/versión-1.0.37-107C10)
+![Versión](https://img.shields.io/badge/versión-1.0.38-107C10)
 
 ## 🎯 Objetivo funcional
 
@@ -82,7 +82,11 @@ sequenceDiagram
     participant API as Dataverse Web API
 
     Supervisor->>PCF: Abre el control
-    PCF->>API: Lee bookableresource activos
+    alt Región España
+        PCF->>API: Lee bookableresource activos con debe completar parte diario y correo del manager
+    else Portugal o Latam
+        PCF->>API: Lee bookableresource activos
+    end
     API-->>PCF: Recursos ordenados
     PCF-->>Supervisor: Muestra el primer recurso
 
@@ -223,7 +227,7 @@ flowchart LR
     P --> LA[3 · Latam]
 ~~~
 
-> ⚠️ En la versión actual, <code>sec_region</code> se recibe y se pasa al componente, pero no modifica consultas, filtros, estados, textos ni horarios. España, Portugal y Latam se comportan funcionalmente igual. El idioma depende del usuario, no de este parámetro.
+> ✅ En España (<code>1</code>), los recursos se filtran por <code>statecode = 0</code>, <code>sec_debecompletarpartediario = 1</code> y <code>pdw_mangeremail</code> igual al correo del usuario conectado. En Portugal (<code>2</code>) y Latam (<code>3</code>) solo se filtran recursos activos. El idioma depende del usuario, no de este parámetro.
 
 ## 🔐 Requisitos y permisos
 
@@ -286,14 +290,14 @@ Scripts disponibles:
 
 ## 🔁 Versionado
 
-La versión actual es **1.0.37**. Cuando se modifique la lógica o la interfaz del PCF, hay que incrementar el tercer número y sincronizar:
+La versión actual es **1.0.38**. Cuando se modifique la lógica o la interfaz del PCF, hay que incrementar el tercer número y sincronizar:
 
 - <code>AprobacionControlHorario/ControlManifest.Input.xml</code>
 - <code>AprobacionControlHorario/AprobacionControlHorarioApp.tsx</code>
 
 ## 📌 Limitaciones conocidas
 
-- <code>sec_region</code> todavía no tiene lógica regional.
+- En España, si el correo del usuario todavía no está disponible, el control espera antes de cargar recursos para no mostrar datos sin filtrar.
 - Se muestran todos los recursos activos, sin filtro por supervisor.
 - La aprobación semanal solo procesa partes Enviados.
 - Las entradas se agrupan según la fecha/hora del navegador.

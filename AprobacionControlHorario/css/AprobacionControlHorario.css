@@ -333,6 +333,12 @@ button.ach-day-status:focus-visible {
     border-bottom: 1px solid #edebe9;
 }
 
+/* Mantiene alineado el inicio de todas las líneas temporales aunque solo
+   algunos días tengan acciones de aprobación visibles. */
+.ach-day-actions--placeholder {
+    visibility: hidden;
+}
+
 .ach-day-action {
     min-height: 23px;
     padding: 2px 6px;

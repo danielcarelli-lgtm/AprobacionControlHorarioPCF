@@ -43,7 +43,7 @@ interface IUserContextInfo {
     email: string;
 }
 
-const VERSION = "v1.0.37";
+const VERSION = "v1.0.40";
 const DRAFT_STATUS = 1;
 const INACTIVE_STATUS = 2;
 const SENT_STATUS = 909540001;
@@ -417,9 +417,24 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
     // 1. Cargar Recursos al iniciar
     useEffect(() => {
         const loadResources = async () => {
+            const normalizedRegion = String(region || "1");
+            const isSpain = normalizedRegion === "1";
+
+            // En España el correo es obligatorio para evitar cargar recursos sin el filtro regional.
+            if (isSpain && !userContextInfo.email) {
+                setResources([]);
+                setSelectedResource(null);
+                setIsLoadingResources(true);
+                return;
+            }
+
             setIsLoadingResources(true);
             try {
-                const query = `?$select=bookableresourceid,name&$filter=statecode eq 0&$orderby=name asc`;
+                const managerEmail = userContextInfo.email.replace(/'/g, "''");
+                const resourceFilter = isSpain
+                    ? `statecode eq 0 and sec_debecompletarpartediario eq true and pdw_mangeremail eq '${managerEmail}'`
+                    : "statecode eq 0";
+                const query = `?$select=bookableresourceid,name&$filter=${resourceFilter}&$orderby=name asc`;
                 const results = await context.webAPI.retrieveMultipleRecords("bookableresource", query);
                 
                 const loadedResources = results.entities.reduce<IResource[]>((loaded, resource) => {
@@ -432,6 +447,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                 }, []);
                 
                 setResources(loadedResources);
+                setSelectedResource(null);
                 if (loadedResources.length > 0) {
                     setSelectedResource(loadedResources[0]);
                 }
@@ -443,7 +459,7 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
         };
 
         void loadResources();
-    }, [context, region, locale]);
+    }, [context, region, locale, userContextInfo.email]);
 
     // 2. Cargar Entradas de Tiempo al cambiar el recurso o la semana
     useEffect(() => {
@@ -754,8 +770,9 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                             {t("noDailyReport")}
                         </div>
                     )}
-                    {canUpdateReport && dailyReport && (
-                        <div className="ach-day-actions">
+                    <div className={`ach-day-actions${canUpdateReport && dailyReport ? "" : " ach-day-actions--placeholder"}`}>
+                        {canUpdateReport && dailyReport && (
+                            <>
                             <button
                                 type="button"
                                 className="ach-day-action ach-day-action--reject"
@@ -776,9 +793,10 @@ export const AprobacionControlHorarioApp: React.FC<IAppProps> = ({ context, regi
                             >
                                 {t("approveReport")}
                             </button>
+                            </>
+                        )}
                         </div>
-                    )}
-                </div>
+                    </div>
                 
                 {!dailyReport ? (
                     <div className="ach-empty-state">
